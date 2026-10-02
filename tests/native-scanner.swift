@@ -65,7 +65,9 @@ private func runScannerTests() throws {
         precondition(category.items.allSatisfy { $0.canClean && !$0.id.isEmpty && !$0.category.isEmpty && $0.path.hasPrefix("/") })
     }
     precondition(scan.categories["caches"]!.items.count == 2)
+    precondition(scan.categories["caches"]!.skippedPaths > 0)
     precondition(scan.categories["downloads"]!.items.map(\.name) == ["stale.zip"])
+    precondition(scan.categories["downloads"]!.skippedPaths == 0)
     precondition(scan.categories["applications"]!.items.count == 4)
     precondition(!scan.categories["applications"]!.items.contains { $0.path.hasSuffix("/Google") })
     precondition(scan.categories["startup"]!.items.count == 3)
@@ -87,6 +89,7 @@ private func runScannerTests() throws {
                                  trashItem: { _ in }).scan()
     precondition(missingScan.storage == nil)
     let categories = encoded["categories"] as! [String: [String: Any]]
+    precondition((categories["caches"]!["skippedPaths"] as! Int) > 0)
     let item = (categories["applications"]!["items"] as! [[String: Any]])[0]
     precondition(["id", "category", "path", "name", "bytes", "formatted", "canClean"].allSatisfy { item[$0] != nil })
 

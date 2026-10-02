@@ -67,7 +67,7 @@
       const count = card.querySelector("[data-recommendation-count]");
       const size = card.querySelector("[data-recommendation-size]");
       const button = card.querySelector("button");
-      if (isNative || state !== "ready") {
+      if (state !== "ready" && state !== "partial") {
         if (state === "loading") {
           count.textContent = isNative
             ? "Waiting for scan results."
@@ -81,14 +81,36 @@
         button.disabled = true;
         return;
       }
-      const items = categories[key].items.filter(
-        (item) => item.canClean !== false &&
-          (key !== "downloads" || item.ageDays > 90),
+      const category = categories[key];
+      if (isNative && !category.available) {
+        count.textContent = "Recommendations are unavailable for this category.";
+        size.textContent = "";
+        button.disabled = true;
+        return;
+      }
+      let items = category.items.filter(
+        (item) => isNative
+          ? item.canClean === true
+          : item.canClean !== false && (key !== "downloads" || item.ageDays > 90),
       );
+      if (isNative) {
+        items = [...new Map(items.map((item) => [item.path, item])).values()];
+      }
       count.textContent = items.length
-        ? `${items.length} eligible example ${items.length === 1 ? "item" : "items"}`
-        : "No eligible example items.";
-      size.textContent = `${formatMB(items.reduce((sum, item) => sum + item.mb, 0))} available for review`;
+        ? `${items.length} eligible ${isNative ? "" : "example "}${items.length === 1 ? "item" : "items"}`
+        : isNative ? "No eligible items found in accessible results."
+          : "No eligible example items.";
+      if (isNative && (category.error || category.skippedPaths > 0)) {
+        count.textContent += " · Partial scan";
+      }
+      const amount = items.reduce(
+        (sum, item) => sum + (isNative ? item.bytes : item.mb), 0,
+      );
+      const formatted = isNative
+        ? amount < 1_000_000 ? `${amount.toLocaleString("en-US")} bytes`
+          : formatMB(amount / 1_000_000)
+        : formatMB(amount);
+      size.textContent = `${formatted} available for review`;
       button.disabled = items.length === 0;
     });
   }
@@ -98,7 +120,7 @@
     scanButtons.forEach((button) => {
       button.disabled = state === "loading";
     });
-    const completed = state === "ready" || state === "empty";
+    const completed = state === "ready" || state === "empty" || state === "partial";
     if (completed) hasCompletedScan = true;
     scanButtons.forEach((button) => {
       button.textContent = hasCompletedScan ? "Rescan" : "Scan";
@@ -454,22 +476,6 @@
       }
       return started;
     };
-    window.addEventListener("macwipe:scan", (event) => {
-      hasCompletedScan = true;
-      const scanned = Object.values(event.detail.categories);
-      const incomplete = scanned.some((category) => category.error);
-      const hasItems = scanned.some((category) =>
-        category.items.some((item) => item.canClean === true),
-      );
-      setScanState(
-        incomplete ? "error" : hasItems ? "ready" : "empty",
-        incomplete
-          ? "Native · Scan finished with unavailable or incomplete categories."
-          : hasItems
-            ? "Native · Scan finished. Review files before cleanup."
-            : "Native · Scan finished. No accessible eligible items found.",
-      );
-    });
     window.addEventListener("macwipe:cleanup", () => {
       setScanState("loading", "Native · Waiting for cleanup rescan…");
     });
@@ -479,12 +485,17 @@
       renderHomeStorage(payload.storage ?? null);
 
       for (const [key, category] of Object.entries(categories)) {
-        category.items = (payload.categories[key]?.items || []).map((file) => ({
+        const source = payload.categories[key];
+        category.available = !!source;
+        category.error = source?.error;
+        category.skippedPaths = source?.skippedPaths || 0;
+        category.items = (source?.items || []).map((file) => ({
           id: file.id,
           category: file.category,
           path: file.path,
           name: file.name,
           mb: file.bytes / 1_000_000,
+          bytes: file.bytes,
           info: file.formatted || formatMB(file.bytes / 1_000_000),
           details: `${file.path}. ${payload.sizeMeaning || ""}`,
           canClean: file.canClean === true,
@@ -509,6 +520,23 @@
       currentCategory = null;
       switchCategory(key || "home");
 
+      const scanned = Object.entries(payload.categories)
+        .filter(([key]) => key !== "storage").map(([, category]) => category);
+      const skipped = scanned.reduce(
+        (sum, category) => sum + (category.skippedPaths || 0), 0,
+      );
+      const incomplete = scanned.some((category) => category.error) || skipped > 0;
+      const hasItems = scanned.some((category) =>
+        category.items.some((item) => item.canClean === true),
+      );
+      setScanState(
+        incomplete ? "partial" : hasItems ? "ready" : "empty",
+        incomplete
+          ? `Native · Partial scan. ${skipped ? `${skipped} paths skipped or unavailable. ` : ""}Accessible results only; full access is not established.`
+          : hasItems
+            ? "Native · Scan finished. Accessible results only; full access is not established."
+            : "Native · No eligible items found in accessible results; full access is not established.",
+      );
       previewNote.textContent = scanStatus.textContent;
       if (reviewDialog.open && !confirmButton.hidden) reviewDialog.close();
     };

@@ -231,6 +231,7 @@ private struct CategoryScan: Encodable, Sendable {
     var eligibleFormatted = "0 bytes"
     var canClean = false
     var items: [ScanItem] = []
+    var skippedPaths = 0
     var error: String?
 }
 
@@ -301,9 +302,13 @@ private final class FileWorker: @unchecked Sendable {
             var result = CategoryScan()
             for root in roots(for: category) {
                 // Invalid or inaccessible roots never disable other roots/items.
-                guard (try? validateRoot(root)) != nil else { continue }
+                guard (try? validateRoot(root)) != nil else {
+                    result.skippedPaths += 1
+                    continue
+                }
                 let entries = category == .applications && root.lastPathComponent != "Application Support"
-                    ? applications.filter { $0.path.hasPrefix(root.path + "/") } : children(of: root)
+                    ? applications.filter { $0.path.hasPrefix(root.path + "/") }
+                    : children(of: root, onError: { result.skippedPaths += 1 })
                 for child in entries {
                     // Diagnostic reports have their own Performance inventory.
                     if category == .logs && child.lastPathComponent == "DiagnosticReports" { continue }
@@ -386,11 +391,12 @@ private final class FileWorker: @unchecked Sendable {
         }
     }
 
-    private func children(of root: URL) -> [URL] {
+    private func children(of root: URL, onError: () -> Void = {}) -> [URL] {
         do {
             try validateRoot(root)
             return try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
         } catch {
+            onError()
             return []
         }
     }
@@ -450,6 +456,7 @@ private final class FileWorker: @unchecked Sendable {
         } catch {
             // A restricted descendant must not hide accessible siblings. Never
             // approve a partial directory or a damaged/partly unreadable app.
+            result.skippedPaths += 1
             guard category != .downloads, url.pathExtension.lowercased() != "app" else { return }
             for child in children(of: url) {
                 scanEntry(child, root: root, category: category, now: now, result: &result)
