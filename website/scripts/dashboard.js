@@ -3,6 +3,10 @@
 
   const isNative = !!window.webkit?.messageHandlers?.macwipeBridge;
   document.body.classList.toggle("native-mode", isNative);
+  let demoKept = new Set();
+  if (!isNative) {
+    try { demoKept = new Set(JSON.parse(localStorage.getItem("macwipe.demo.keptIDs") || "[]")); } catch {}
+  }
 
   function itemMetadata(item) {
     const temporary = item.kind === "cache" && item.reviewClassification === "temporary";
@@ -43,6 +47,9 @@
         key,
         { ...category, items: uniqueItems(category.items).map((item, originalScanIndex) => ({
           ...item, ...itemMetadata(item), originalScanIndex,
+          kept: demoKept.has(item.id),
+          originalCanClean: item.canClean !== false,
+          canClean: item.canClean !== false && !demoKept.has(item.id),
           bytes: !item.info && Number.isFinite(item.mb) && item.mb >= 0
             ? item.mb * 1_000_000 : null,
         })) },
@@ -131,6 +138,7 @@
       }
       let items = category.items.filter(
         (item) => item.kind !== "unmatched-support"
+          && !item.kept
           && item.homeRecommendationEligible
           && (isNative
             ? item.canClean === true
@@ -311,7 +319,7 @@
   }
 
   function setSelected(item, checked) {
-    if (item.canClean === false) return;
+    if (item.canClean === false || item.kept) return;
     if (selected.has(item.id) !== checked) {
       if (checked) selected.add(item.id);
       else selected.delete(item.id);
@@ -358,7 +366,7 @@
     if (item.canClean === false) {
       const note = document.createElement("small");
       note.className = "item-review-label";
-      note.textContent = "Read-only inventory";
+      note.textContent = item.kept ? "Kept" : "Read-only inventory";
       nameCell.append(note);
     }
     if (unmatched) {
@@ -405,7 +413,8 @@
       explanation,
       item.explanation || "",
       `Owner: ${item.ownerName || "Owner not identified."}`,
-      item.canClean === false ? "Read-only inventory. Cleanup is not available for this item." : "",
+      item.kept ? "Kept. Reverse Keep this before selecting this item for removal. Allowing a kept descendant also reverses its covering folder exclusion. Allowing a folder also reverses exclusions inside it."
+        : item.canClean === false ? "Read-only inventory. Cleanup is not available for this item." : "",
       item.path ? `Path: ${item.path}` : "",
       `Logical file size: ${size}`,
       Number.isFinite(item.modifiedAt) ? `Modified: ${new Date(item.modifiedAt * 1000).toLocaleString()}` : "",
@@ -559,6 +568,24 @@
   }
 
   const actions = {
+    "keep-item": () => {
+      if (!detailsItem) return;
+      if (isNative) {
+        window.macwipeUI.setKept(detailsItem.id, !detailsItem.kept);
+        return;
+      }
+      detailsItem.kept = !detailsItem.kept;
+      if (detailsItem.kept) demoKept.add(detailsItem.id);
+      else demoKept.delete(detailsItem.id);
+      detailsItem.canClean = detailsItem.originalCanClean && !detailsItem.kept;
+      selected.delete(detailsItem.id);
+      try { localStorage.setItem("macwipe.demo.keptIDs", JSON.stringify([...demoKept])); } catch {}
+      cachedRows.clear();
+      checkboxById.clear();
+      renderCategoryList(currentCategory);
+      renderHomeRecommendations();
+      showItemDetails(detailsItem);
+    },
     "storage-settings": () => fixedAction("openStorageSettings", "Open System Settings → General → Storage."),
     "login-settings": () => fixedAction("openLoginItems", "Open System Settings → General → Login Items."),
     "show-finder": () => {
@@ -634,10 +661,7 @@
     else if (button.dataset.details) {
       const item = itemById.get(button.dataset.details);
       if (item) {
-        detailsItem = item;
-        document.querySelector("#btn-finder").hidden = false;
-        document.querySelector("#details-action-status").textContent = "";
-        openDetails(`Tell me about ${item.name}.`, itemDetails(item));
+        showItemDetails(item);
       }
     } else if (Object.hasOwn(actions, button.dataset.action)) {
       actions[button.dataset.action]();
@@ -654,6 +678,15 @@
   function fixedAction(method, manual) {
     if (isNative) window.macwipeUI[method]();
     else scanStatus.textContent = `Demo: settings action simulated. ${manual}`;
+  }
+  function showItemDetails(item) {
+    detailsItem = item;
+    document.querySelector("#btn-finder").hidden = false;
+    const keep = document.querySelector("#btn-keep-item");
+    keep.hidden = false;
+    keep.textContent = item.kept ? "Allow recommendations again" : "Keep this";
+    document.querySelector("#details-action-status").textContent = "";
+    openDetails(`Tell me about ${item.name}.`, itemDetails(item));
   }
   for (const event of ["action", "error"]) window.addEventListener(`macwipe:${event}`, ({ detail }) => {
     if (["showInFinder", "openLoginItems", "openStorageSettings"].includes(detail.action)) {
@@ -708,6 +741,7 @@
           category: file.category,
           path: file.path,
           modifiedAt: file.modifiedAt,
+          kept: file.kept === true,
           name: file.name,
           mb: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes / 1_000_000 : null,
           bytes: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes : null,
@@ -728,6 +762,11 @@
 
       itemById.clear();
       allItems.forEach((item) => itemById.set(item.id, item));
+      if (detailsItem && document.querySelector("#details-dialog").open) {
+        const current = itemById.get(detailsItem.id);
+        if (current) showItemDetails(current);
+        else document.querySelector("#details-dialog").close();
+      }
       selected.clear();
       selectedMB = 0;
       cachedRows.clear();

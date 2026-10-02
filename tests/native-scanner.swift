@@ -356,7 +356,40 @@ private func runDownloadRuleTests() throws {
     print("PASS: strict 30-day modification boundary, actual timestamp, excluded types, and removal-time eligibility; Trash mocked.")
 }
 
+private func runKeepTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("keep-rule/home")
+    _ = try writeFixture("Library/Caches/pip/http-v2/response", under: home)
+    _ = try writeFixture("Library/Caches/pip/wheels/wheel", under: home)
+    _ = try writeFixture("Library/Caches/pip-other/file", under: home)
+    let suite = "macwipe-fixture-\(UUID().uuidString)"
+    let preferences = UserDefaults(suiteName: suite)!
+    defer { preferences.removePersistentDomain(forName: suite) }
+    var moved: [String] = []
+    let worker = FileWorker(home: home, systemRoot: nativeTestSystem, preferences: preferences,
+                            trashItem: { moved.append($0.path) })
+    let before = worker.scan().categories["caches"]!
+    let response = before.items.first { $0.name == "http-v2" }!
+    try worker.setKept(id: response.id, kept: true)
+    let staleRequest = worker.cleanup(try selections([("caches", [response.path])]))
+    precondition(staleRequest.movedCount == 0 && !staleRequest.errors.isEmpty && moved.isEmpty)
+    let kept = worker.scan().categories["caches"]!
+    let keptResponse = kept.items.first { $0.id == response.id }!
+    precondition(keptResponse.kept && !keptResponse.canClean && !keptResponse.bulkSelectionEligible && !keptResponse.homeRecommendationEligible)
+    precondition(kept.bytes == before.bytes && keptResponse.bytes == response.bytes)
+    let restarted = FileWorker(home: home, systemRoot: nativeTestSystem, preferences: preferences, trashItem: { _ in })
+    precondition(restarted.scan().categories["caches"]!.items.first { $0.id == response.id }!.kept)
+    try restarted.setKept(id: response.id, kept: false)
+    precondition(restarted.scan().categories["caches"]!.items.first { $0.id == response.id }!.canClean)
+    let parent = URL(fileURLWithPath: response.path).deletingLastPathComponent().path
+    preferences.set([parent], forKey: "macwipe.keptPaths")
+    let descendants = FileWorker(home: home, systemRoot: nativeTestSystem, preferences: preferences, trashItem: { _ in }).scan().categories["caches"]!
+    precondition(descendants.items.filter { $0.path.hasPrefix(parent + "/") }.allSatisfy { $0.kept && !$0.canClean })
+    precondition(descendants.items.first { $0.name == "pip-other" }!.canClean)
+    print("PASS: persistent Keep exclusions, unchanged storage accounting, descendants, prefix siblings, reversal, and native stale-approval rejection; Trash mocked.")
+}
+
 try runScannerTests()
+try runKeepTests()
 try runDownloadRuleTests()
 try runAppRemovalTests()
 if CommandLine.arguments.contains("--ui") {

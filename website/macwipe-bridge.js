@@ -100,6 +100,7 @@
     },
 
     showInFinder(id) { return post("showInFinder", { id }); },
+    setKept(id, kept) { return post("setKept", { id, kept }); },
     openLoginItems() { return post("openLoginItems"); },
     openStorageSettings() { return post("openStorageSettings"); },
     onActionComplete(result) {

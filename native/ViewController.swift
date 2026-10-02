@@ -156,6 +156,25 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
             return
         }
         switch action {
+        case "setKept":
+            guard body.count == 3, let id = body["id"] as? String, let kept = body["kept"] as? Bool else { return }
+            busy = true
+            let worker = worker
+            fileQueue.async { [weak self] in
+                do {
+                    try worker.setKept(id: id, kept: kept)
+                    let result = worker.scan()
+                    DispatchQueue.main.async { [weak self] in
+                        self?.busy = false
+                        self?.send("receiveScanData", result)
+                    }
+                } catch {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.busy = false
+                        self?.send("onNativeError", BridgeError(action: action, message: "This item changed. Scan again before changing its exclusion."))
+                    }
+                }
+            }
         case "showInFinder":
             guard body.count == 2, let id = body["id"] as? String else { return }
             busy = true
@@ -357,6 +376,7 @@ private struct ScanItem: Encodable, Sendable {
     let modifiedAt: TimeInterval
     let explanation: String
     let ownerName: String?
+    let kept: Bool
 }
 
 private struct CategoryScan: Encodable, Sendable {
@@ -399,10 +419,13 @@ private final class FileWorker: @unchecked Sendable {
     private let runningApplicationURL: URL
     private var approved: [Category: [String: ApprovedItem]] = [:]
     private var inventory: [String: ApprovedItem] = [:]
+    private let preferences: UserDefaults?
+    private var keptPaths: Set<String>
     private let staleAge: TimeInterval = 30 * 24 * 60 * 60
 
     init(home: URL? = nil, systemRoot: URL = URL(fileURLWithPath: "/"),
          runningApplicationURL: URL = Bundle.main.bundleURL,
+         preferences: UserDefaults? = nil,
          trashItem: @escaping (URL) throws -> Void = {
              try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
          }) {
@@ -416,6 +439,9 @@ private final class FileWorker: @unchecked Sendable {
         self.systemRoot = systemRoot
         self.trashItem = trashItem
         self.runningApplicationURL = runningApplicationURL.resolvingSymlinksInPath().standardizedFileURL
+        self.preferences = preferences ?? (home == nil ? .standard : nil)
+        self.keptPaths = Set((self.preferences?.stringArray(forKey: "macwipe.keptPaths") ?? [])
+            .filter { $0.hasPrefix("/") }.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
     }
 
     func scan(now: Date = Date()) -> ScanData {
@@ -590,7 +616,8 @@ private final class FileWorker: @unchecked Sendable {
             if eligible {
                 // Performance inventories resolved system logs and user diagnostic reports.
                 // Neither these locations nor startup configurations have cleanup eligibility.
-                let canClean = category != .startup && category != .performance
+                let kept = isKept(url)
+                let canClean = category != .startup && category != .performance && !kept
                 if canClean {
                     result.eligibleBytes = try adding(result.eligibleBytes, measured.bytes)
                     approved[category, default: [:]][url.path] = ApprovedItem(root: root, category: category, measured: measured)
@@ -619,7 +646,7 @@ private final class FileWorker: @unchecked Sendable {
                     modifiedAt: Double(metadata.modifiedSeconds) + Double(metadata.modifiedNanoseconds) / 1_000_000_000,
                     explanation: cacheRule?.explanation ?? (category == .caches
                         ? "Unrecognized cache candidate. Review individually; its contents and removal consequences are not established. Folder modification time is not the age of every child."
-                        : ""), ownerName: cacheRule?.owner))
+                        : ""), ownerName: cacheRule?.owner, kept: kept))
             }
             result.bytes = nextBytes
         } catch {
@@ -631,6 +658,18 @@ private final class FileWorker: @unchecked Sendable {
                 scanEntry(child, root: root, category: category, now: now, result: &result)
             }
         }
+    }
+
+    private func isKept(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        return keptPaths.contains { path == $0 || path.hasPrefix($0 + "/") || $0.hasPrefix(path + "/") }
+    }
+
+    func setKept(id: String, kept: Bool) throws {
+        let path = try inventoryURL(id: id).standardizedFileURL.path
+        if kept { keptPaths.insert(path) }
+        else { keptPaths = keptPaths.filter { path != $0 && !path.hasPrefix($0 + "/") && !$0.hasPrefix(path + "/") } }
+        preferences?.set(keptPaths.sorted(), forKey: "macwipe.keptPaths")
     }
 
     func inventoryURL(id: String) throws -> URL {
@@ -677,7 +716,7 @@ private final class FileWorker: @unchecked Sendable {
             do {
                 let root = target.root
                 let item = target.measured
-                guard !containsRunningApplication(item.url) else { throw FileSafetyError.changed }
+                guard !containsRunningApplication(item.url), !isKept(item.url) else { throw FileSafetyError.changed }
                 try validateRoot(root)
                 guard item.url.path.hasPrefix(root.path + "/"),
                       Self.resolvedPath(item.url) == item.url.path else {
