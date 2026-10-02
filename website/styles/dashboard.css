@@ -82,6 +82,13 @@
   box-shadow: 3px 3px 0 var(--ink);
   font-weight: bold;
 }
+#btn-delete-macwipe {
+  --nav-color: var(--panel);
+  margin-top: 18px;
+}
+#delete-macwipe-dialog {
+  width: min(440px, calc(100% - 32px));
+}
 .content-pane {
   min-width: 0;
   padding: 28px;

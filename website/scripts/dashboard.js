@@ -79,6 +79,11 @@
   const scanUpdated = document.querySelector("#scan-updated");
   const scanUpdatedTime = document.querySelector("#scan-updated-time");
   const scanButtons = document.querySelectorAll('[data-action="preview"]');
+  const deleteButton = document.querySelector("#btn-delete-macwipe");
+  const deleteDialog = document.querySelector("#delete-macwipe-dialog");
+  const deleteConfirm = document.querySelector("#delete-macwipe-confirm");
+  const deleteNotice = document.querySelector("#delete-macwipe-notice");
+  deleteDialog.addEventListener("close", () => deleteButton.focus());
 
   function renderHomeRecommendations(state = "ready") {
     document.querySelectorAll("[data-recommendation]").forEach((card) => {
@@ -497,6 +502,19 @@
   }
 
   const actions = {
+    "delete-macwipe": () => {
+      deleteNotice.textContent = isNative
+        ? "Application removal is not available yet."
+        : "Demo only. No application will be removed.";
+      deleteConfirm.disabled = isNative;
+      deleteDialog.showModal();
+      document.querySelector("#delete-macwipe-keep").focus();
+    },
+    "confirm-delete-macwipe": () => {
+      if (isNative) return;
+      deleteNotice.textContent = "Simulated completion. No application was removed.";
+      deleteConfirm.disabled = true;
+    },
     "sort-size": () => {
       const current = categorySort.get(currentCategory) || "none";
       categorySort.set(currentCategory, current === "none" ? "descending"

@@ -9,11 +9,11 @@
     />
     <title>macwipe · Home · Demo</title>
     <link rel="stylesheet" href="styles/theme.css" />
-    <link rel="stylesheet" href="styles/dashboard.css?v=task16" />
+    <link rel="stylesheet" href="styles/dashboard.css?v=task17" />
     <script src="scripts/ui.js" defer></script>
     <script src="scripts/demo-data.js?v=task12" defer></script>
     <script src="macwipe-bridge.js" defer></script>
-    <script src="scripts/dashboard.js?v=task16" defer></script>
+    <script src="scripts/dashboard.js?v=task17" defer></script>
   </head>
   <body class="dashboard-body">
     <a class="skip-link" href="#content-pane">Skip to content</a>
@@ -99,6 +99,12 @@
                 Browser data
               </button>
             </nav>
+            <button class="question-row" type="button" id="btn-delete-macwipe"
+              data-action="delete-macwipe" aria-label="Delete macwipe"
+              aria-haspopup="dialog" aria-controls="delete-macwipe-dialog">
+              <img src="assets/trash.svg" width="18" height="18" alt="" />
+              Delete
+            </button>
           </aside>
           <section
             id="content-pane"
@@ -382,6 +388,20 @@
         </div>
       </div>
       <footer class="status-strip">Review first. You stay in control.</footer>
+    </dialog>
+    <dialog class="window modal-dialog" id="delete-macwipe-dialog"
+      aria-labelledby="delete-macwipe-title" aria-describedby="delete-macwipe-message delete-macwipe-notice">
+      <header class="title-bar">
+        <span class="title-bar-label" id="delete-macwipe-title">Delete macwipe?</span>
+      </header>
+      <div class="dialog-body">
+        <p id="delete-macwipe-message">Move this copy of macwipe to Trash? The app will close. Your other apps and files will stay in place.</p>
+        <p id="delete-macwipe-notice" role="status"></p>
+        <div class="dialog-actions">
+          <button class="question-row" type="button" id="delete-macwipe-keep" data-close autofocus>Keep</button>
+          <button class="question-row primary-btn" type="button" id="delete-macwipe-confirm" data-action="confirm-delete-macwipe">Delete application</button>
+        </div>
+      </div>
     </dialog>
   </body>
 </html>
