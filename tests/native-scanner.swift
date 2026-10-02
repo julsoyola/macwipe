@@ -461,7 +461,34 @@ private func runScopedScanTests() throws {
     print("PASS: initial recommendation scope, retained unrelated results/timestamps/approvals, scoped refresh, and scoped approval consumption; Trash mocked.")
 }
 
+private func runCancellationTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("cancel-rule/home")
+    for index in 0..<150 { _ = try writeFixture("Library/Caches/unknown/\(index)", under: home) }
+    _ = try writeFixture("Library/Logs/log", under: home)
+    var moved: [String] = []
+    let worker = FileWorker(home: home, systemRoot: nativeTestSystem, trashItem: { moved.append($0.path) })
+    let complete = worker.scan(scope: [.caches, .logs])
+    let cache = complete.categories["caches"]!.items[0]
+    let log = complete.categories["logs"]!.items[0]
+    let control = ScanControl()
+    var counts: [Int] = []
+    let cancelled = worker.scan(scope: [.caches], control: control) { _, count in
+        counts.append(count); if count >= 100 { control.cancel() }
+    }
+    precondition(cancelled.cancelled && cancelled.categories["caches"]!.scannedAt == complete.categories["caches"]!.scannedAt)
+    precondition(counts.last == 100 && counts == counts.sorted())
+    let rejected = worker.cleanup(try selections([("caches", [cache.path])]))
+    precondition(rejected.movedCount == 0 && !rejected.errors.isEmpty && moved.isEmpty)
+    let unrelated = worker.cleanup(try selections([("logs", [log.path])]))
+    precondition(unrelated.movedCount == 1 && unrelated.errors.isEmpty)
+    _ = worker.scan(scope: [.caches])
+    let fresh = worker.cleanup(try selections([("caches", [cache.path])]))
+    precondition(fresh.movedCount == 1 && fresh.errors.isEmpty)
+    print("PASS: real traversal progress, cooperative cancellation, retained completed timestamp, cancelled approvals rejected, unrelated approvals preserved, fresh scan restores cleanup; Trash mocked.")
+}
+
 try runScannerTests()
+try runCancellationTests()
 try runScopedScanTests()
 try runExplorerTests()
 try runKeepTests()

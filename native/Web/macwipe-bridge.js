@@ -13,6 +13,8 @@
   ]);
   let pendingAction = null;
   let lastScan = null;
+  let requestSequence = 0;
+  let activeScanID = null;
   const disabledButtons = new Set();
   const controlSelector = [
     '[data-action="preview"]',
@@ -57,6 +59,7 @@
       disabledButtons.forEach((button) => { button.disabled = false; });
       disabledButtons.clear();
     }
+    emit("busy", { action });
   }
 
   function post(action, extra = {}) {
@@ -93,6 +96,26 @@
       paths === null ? id : { id, paths: [...new Set(paths)] });
   }
 
+  function postScan(action, extra = {}) {
+    if (pendingAction) return false;
+    activeScanID = ++requestSequence;
+    if (!post(action, { ...extra, requestID: activeScanID })) { activeScanID = null; return false; }
+    return true;
+  }
+  function acceptScan(payload) {
+    if (payload.requestID != null && payload.requestID !== activeScanID) return false;
+    activeScanID = null;
+    setPending(null);
+    if (payload.cancelled || payload.status === "cancelled") {
+      for (const id of payload.refreshed || []) {
+        if (lastScan?.categories[id]) lastScan.categories[id].canClean = false;
+      }
+      emit("cancelled", payload);
+      return false;
+    }
+    return true;
+  }
+
   const ui = {
     get isBusy() { return pendingAction !== null; },
 
@@ -101,15 +124,21 @@
     },
 
     scan(scope) {
-      return post("requestScan", scope ? { scope } : {});
+      return postScan("requestScan", scope ? { scope } : {});
     },
 
     showInFinder(id) { return post("showInFinder", { id }); },
     setKept(id, kept) { return post("setKept", { id, kept }); },
     openLoginItems() { return post("openLoginItems"); },
     openStorageSettings() { return post("openStorageSettings"); },
-    explore(id) { return post("requestExplorer", id ? { id } : {}); },
-    receiveExplorerData(payload) { setPending(null); emit("explorer", payload); },
+    explore(id) { return postScan("requestExplorer", id ? { id } : {}); },
+    receiveExplorerData(payload) { if (acceptScan(payload)) emit("explorer", payload); },
+    cancelScan() {
+      if (activeScanID === null || !["requestScan", "requestExplorer"].includes(pendingAction)) return false;
+      window.webkit.messageHandlers.macwipeBridge.postMessage({ action: "cancelScan", requestID: activeScanID });
+      return true;
+    },
+    onScanProgress(payload) { if (payload.requestID === activeScanID) emit("progress", payload); },
     onActionComplete(result) {
       setPending(null);
       showStatus(result.message);
@@ -141,6 +170,7 @@
     },
 
     receiveScanData(payload) {
+      if (!acceptScan(payload)) return false;
       lastScan = payload;
       setPending(null);
       for (const [id, category] of Object.entries(payload.categories)) {
@@ -162,10 +192,12 @@
       const incomplete = Object.values(payload.categories).some((category) => category.error);
       showStatus(incomplete ? "Scan finished with unavailable or incomplete categories." : "Scan complete.");
       emit("scan", payload);
+      return true;
     },
 
     onCleanupComplete(freedMB, result = {}) {
       // Native automatically rescans. This number means MB moved to Trash.
+      activeScanID = 0;
       setPending("requestScan");
       const movedMB = Number.isFinite(freedMB) ? Math.max(0, freedMB) : 0;
       const errors = Array.isArray(result.errors) ? result.errors : [];
@@ -181,6 +213,7 @@
     },
 
     onNativeError(error) {
+      activeScanID = null;
       setPending(null);
       showStatus(error.message);
       emit("error", error);

@@ -14,6 +14,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
     private var dashboardURL: URL?
     private var busy = false
     private var pageGeneration = 0
+    private var activeScan: (id: Int, control: ScanControl)?
     private let worker = FileWorker()
     private let explorer = StorageExplorer()
     private let fileQueue = DispatchQueue(label: "macwipe.files", qos: .userInitiated)
@@ -122,6 +123,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         pageGeneration += 1
+        activeScan?.control.cancel()
         showLaunchState("Opening macwipe…")
     }
 
@@ -151,15 +153,21 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
               let body = message.body as? [String: Any],
               let action = body["action"] as? String else { return }
 
+        if action == "cancelScan" {
+            if body.count == 2, let id = body["requestID"] as? Int, activeScan?.id == id {
+                activeScan?.control.cancel()
+            }
+            return
+        }
         guard !busy else {
-            if action == "requestScan" { return }
             send("onNativeError", BridgeError(action: action, message: "An operation is already running."))
             return
         }
         switch action {
         case "requestExplorer":
-            guard body.count == 1 || (body.count == 2 && body["id"] is String) else { return }
-            requestExplorer(id: body["id"] as? String)
+            guard let requestID = body["requestID"] as? Int, requestID > 0,
+                  body.count == 2 || (body.count == 3 && body["id"] is String) else { return }
+            requestExplorer(id: body["id"] as? String, requestID: requestID)
         case "setKept":
             guard body.count == 3, let id = body["id"] as? String, let kept = body["kept"] as? Bool else { return }
             busy = true
@@ -206,19 +214,20 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
                 : login ? "Open System Settings → General → Login Items."
                 : "Open System Settings → General → Storage."))
         case "requestScan":
+            guard let requestID = body["requestID"] as? Int, requestID > 0 else { return }
             let scope: [Category]
             if let values = body["scope"] as? [String] {
                 let parsed = values.compactMap(Category.init(rawValue:))
-                guard body.count == 2, !parsed.isEmpty, parsed.count == values.count,
+                guard body.count == 3, !parsed.isEmpty, parsed.count == values.count,
                       Set(parsed).count == parsed.count else {
                     send("onNativeError", BridgeError(action: action, message: "Invalid scan category scope.")); return
                 }
                 scope = parsed
             } else {
-                guard body.count == 1 else { return }
+                guard body.count == 2 else { return }
                 scope = [.downloads, .caches]
             }
-            requestScan(scope: scope)
+            requestScan(scope: scope, requestID: requestID)
         case "removeApplication":
             guard body.count == 1 else {
                 send("onNativeError", BridgeError(action: action, message: "Invalid application removal request."))
@@ -244,38 +253,61 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
         }
     }
 
-    private func requestExplorer(id: String?) {
+    private func requestExplorer(id: String?, requestID: Int) {
         busy = true
+        let control = ScanControl()
+        activeScan = (requestID, control)
         let generation = pageGeneration
         let explorer = explorer
         fileQueue.async { [weak self] in
             do {
-                let result = try id.map { try explorer.drill(id: $0) } ?? explorer.scan()
+                let progress: (Int) -> Void = { count in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.activeScan?.id == requestID, generation == self.pageGeneration else { return }
+                        self.send("onScanProgress", ScanProgress(requestID: requestID, category: "Storage explorer", processedCount: count))
+                    }
+                }
+                var result = try id.map { try explorer.drill(id: $0, control: control, progress: progress) }
+                    ?? explorer.scan(control: control, progress: progress)
+                result.requestID = requestID
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     self.busy = false
+                    self.activeScan = nil
                     if generation == self.pageGeneration { self.send("receiveExplorerData", result) }
                 }
             } catch {
                 DispatchQueue.main.async { [weak self] in
-                    self?.busy = false
-                    self?.send("onNativeError", BridgeError(action: "requestExplorer", message: "This folder changed or is outside the current inventory. Scan storage again."))
+                    guard let self else { return }
+                    self.busy = false
+                    self.activeScan = nil
+                    if generation == self.pageGeneration {
+                        self.send("onNativeError", BridgeError(action: "requestExplorer", message: "This folder changed or is outside the current inventory. Scan storage again."))
+                    }
                 }
             }
         }
     }
 
-    private func requestScan(scope: [Category] = [.downloads, .caches]) {
+    private func requestScan(scope: [Category] = [.downloads, .caches], requestID: Int = 0) {
         busy = true
+        let control = ScanControl()
+        activeScan = (requestID, control)
         let generation = pageGeneration
         let worker = worker
         fileQueue.async { [weak self] in
-            let result = worker.scan(scope: scope)
+            var result = worker.scan(scope: scope, control: control) { category, count in
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.activeScan?.id == requestID, generation == self.pageGeneration else { return }
+                    self.send("onScanProgress", ScanProgress(requestID: requestID, category: category.rawValue, processedCount: count))
+                }
+            }
+            result.requestID = requestID == 0 ? nil : requestID
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.busy = false
+                self.activeScan = nil
                 guard generation == self.pageGeneration else {
-                    if self.isDashboard(self.webView?.url) { self.requestScan() }
                     return
                 }
                 self.send("receiveScanData", result)
@@ -441,8 +473,16 @@ private struct ScanData: Encodable, Sendable {
     let categories: [String: CategoryScan]
     let storage: VolumeStorage?
     let refreshed: [String]
+    var requestID: Int?
+    var cancelled = false
     let staleDownloadDays = 30
     let sizeMeaning = "Logical file bytes; not allocated or reclaimable disk space."
+}
+
+private struct ScanProgress: Encodable, Sendable {
+    let requestID: Int
+    let category: String
+    let processedCount: Int
 }
 
 private struct CleanupResult: Encodable, Sendable {
@@ -462,6 +502,10 @@ private final class FileWorker: @unchecked Sendable {
     private var approved: [Category: [String: ApprovedItem]] = [:]
     private var inventory: [String: ApprovedItem] = [:]
     private var completed: [String: CategoryScan] = [:]
+    private var scanControl: ScanControl?
+    private var scanProgress: ((Category, Int) -> Void)?
+    private var scanCategory: Category = .caches
+    private var processedCount = 0
     var completedScope: [Category] { Category.allCases.filter { completed[$0.rawValue] != nil } }
     private let preferences: UserDefaults?
     private var keptPaths: Set<String>
@@ -488,13 +532,19 @@ private final class FileWorker: @unchecked Sendable {
             .filter { $0.hasPrefix("/") }.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
     }
 
-    func scan(now: Date = Date(), scope: [Category] = Category.allCases) -> ScanData {
+    func scan(now: Date = Date(), scope: [Category] = Category.allCases,
+              control: ScanControl = ScanControl(), progress: @escaping (Category, Int) -> Void = { _, _ in }) -> ScanData {
+        let previousInventory = inventory
+        scanControl = control; scanProgress = progress; processedCount = 0
+        scanCategory = scope.contains(.applications) ? .applications : scope.first ?? .caches
+        defer { scanControl = nil; scanProgress = nil }
         for category in scope { approved.removeValue(forKey: category) }
         inventory = inventory.filter { !scope.contains($0.value.category) }
         var results = completed
         let applications = scope.contains(.applications) ? roots(for: .applications).prefix(2).flatMap { applicationURLs(in: $0) } : []
         var installedNames = Set<String>()
         for app in applications {
+            if control.cancelled { break }
             installedNames.insert(app.deletingPathExtension().lastPathComponent.lowercased())
             if let data = try? Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")),
                let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
@@ -509,6 +559,9 @@ private final class FileWorker: @unchecked Sendable {
             }
         }
         for category in scope {
+            if control.cancelled { break }
+            scanCategory = category
+            progress(category, processedCount)
             var result = CategoryScan()
             for root in roots(for: category) {
                 // Invalid or inaccessible roots never disable other roots/items.
@@ -528,6 +581,7 @@ private final class FileWorker: @unchecked Sendable {
                         ? children(of: entry, onError: { result.skippedPaths += 1; result.skippedLocations.append(entry.path) }) : [entry]
                 } : entries
                 for child in candidates {
+                    if control.cancelled { break }
                     // Diagnostic reports have their own Performance inventory.
                     if category == .logs && child.lastPathComponent == "DiagnosticReports" { continue }
                     if category == .applications {
@@ -562,6 +616,11 @@ private final class FileWorker: @unchecked Sendable {
         storage.eligibleFormatted = format(storage.eligibleBytes)
         storage.canClean = storage.items.contains { $0.canClean }
         results["storage"] = storage
+        if control.cancelled {
+            inventory = previousInventory
+            for category in scope { approved.removeValue(forKey: category) }
+            return ScanData(categories: completed, storage: volumeStorage(), refreshed: scope.map(\.rawValue), cancelled: true)
+        }
         completed = results
         return ScanData(categories: results, storage: volumeStorage(), refreshed: scope.map(\.rawValue) + ["storage"])
     }
@@ -629,6 +688,7 @@ private final class FileWorker: @unchecked Sendable {
                   errorHandler: { _, _ in true }) else { return [] }
         var applications: [URL] = []
         for case let url as URL in enumerator {
+            if scanControl?.cancelled == true { break }
             guard let metadata = try? stamp(url) else { continue }
             if metadata.kind == S_IFLNK {
                 enumerator.skipDescendants()
@@ -699,6 +759,7 @@ private final class FileWorker: @unchecked Sendable {
             }
             result.bytes = nextBytes
         } catch {
+            if scanControl?.cancelled == true { return }
             // A restricted descendant must not hide accessible siblings. Never
             // approve a partial directory or a damaged/partly unreadable app.
             result.skippedPaths += 1
@@ -877,6 +938,11 @@ private final class FileWorker: @unchecked Sendable {
         var entries: [String: FileStamp] = [:]
         var pending = [url]
         while let entry = pending.popLast() {
+            if scanControl?.cancelled == true { throw FileSafetyError.cancelled }
+            if scanControl != nil {
+                processedCount += 1
+                if processedCount % 100 == 0 { scanProgress?(scanCategory, processedCount) }
+            }
             let metadata = try stamp(entry)
             entries[entry.path] = metadata
             switch metadata.kind {
@@ -939,6 +1005,7 @@ private struct ExplorerResult: Encodable, Sendable {
     let bytes: UInt64?
     var breadcrumbs: [ExplorerCrumb] = []
     var limited = false
+    var requestID: Int?
 }
 
 private struct ExplorerCrumb: Encodable, Sendable { let id: String; let name: String }
@@ -976,6 +1043,10 @@ private final class StorageExplorer: @unchecked Sendable {
     }
 
     func scan(control: ScanControl = ScanControl(), progress: (Int) -> Void = { _ in }) -> ExplorerResult {
+        let savedInventory = inventory, savedRoots = approvedRoots, savedRootInventory = rootInventory, savedBreadcrumbs = breadcrumbs
+        defer {
+            if control.cancelled { inventory = savedInventory; approvedRoots = savedRoots; rootInventory = savedRootInventory; breadcrumbs = savedBreadcrumbs }
+        }
         inventory.removeAll()
         approvedRoots.removeAll()
         breadcrumbs.removeAll()
@@ -1030,6 +1101,8 @@ private final class StorageExplorer: @unchecked Sendable {
     }
 
     func drill(id: String, control: ScanControl = ScanControl(), progress: (Int) -> Void = { _ in }) throws -> ExplorerResult {
+        let savedInventory = inventory, savedBreadcrumbs = breadcrumbs
+        defer { if control.cancelled { inventory = savedInventory; breadcrumbs = savedBreadcrumbs } }
         let root = try url(id: id)
         let metadata = try stamp(root)
         guard metadata.kind == S_IFDIR, !isPackage(root) else { throw FileSafetyError.changed }
@@ -1142,4 +1215,4 @@ private final class StorageExplorer: @unchecked Sendable {
     }
 }
 
-private enum FileSafetyError: Error { case unreadable, changed }
+private enum FileSafetyError: Error { case unreadable, changed, cancelled }

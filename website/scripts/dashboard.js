@@ -145,6 +145,9 @@
         return;
       }
       const category = categories[key];
+      if (category.cancelled) {
+        count.textContent = "Scan cancelled. Rescan before cleanup."; size.textContent = ""; button.disabled = true; return;
+      }
       if (isNative && !category.available) {
         count.textContent = "Not scanned.";
         size.textContent = "";
@@ -201,7 +204,7 @@
     scanButtons.forEach((button) => {
       button.textContent = hasCompletedScan ? "Rescan" : "Scan";
     });
-    scanUpdated.hidden = !completed;
+    scanUpdated.hidden = !hasCompletedScan;
     if (completed) {
       const now = isNative && categories[currentCategory]?.scannedAt
         ? new Date(categories[currentCategory].scannedAt * 1000) : new Date();
@@ -391,7 +394,7 @@
     if (item.canClean === false) {
       const note = document.createElement("small");
       note.className = "item-review-label";
-      note.textContent = item.kept ? "Kept" : "Read-only inventory";
+      note.textContent = item.scanCancelled ? "Scan cancelled — rescan before cleanup" : item.kept ? "Kept" : "Read-only inventory";
       nameCell.append(note);
     }
     if (unmatched) {
@@ -483,9 +486,9 @@
     }
 
     renderCategoryList(key);
-    if (isNative && key !== "explorer" && !category.available && !window.macwipeUI.isBusy) {
+    if (isNative && key !== "explorer" && !category.available && !category.cancelled && !window.macwipeUI.isBusy) {
       queueMicrotask(() => {
-        if (currentCategory === key && !category.available && !window.macwipeUI.isBusy) window.macwipeUI.scan([key]);
+        if (currentCategory === key && !category.available && !category.cancelled && !window.macwipeUI.isBusy) window.macwipeUI.scan([key]);
       });
     }
     if (isNative && category.scannedAt) {
@@ -616,6 +619,7 @@
   }
 
   const actions = {
+    "cancel-scan": () => window.macwipeUI?.cancelScan(),
     "explore-storage": () => switchCategory("explorer"),
     "back-home": () => switchCategory("home"),
     "explorer-scan": () => {
@@ -769,7 +773,7 @@
         originalScanIndex,
       })) });
     cachedRows.delete("explorer");
-    allItems = uniqueItems(Object.values(categories).flatMap((category) => category.items));
+    allItems = [...new Map(Object.values(categories).flatMap((category) => category.items.map((item) => [item.id, item]))).values()];
     itemById.clear(); allItems.forEach((item) => itemById.set(item.id, item));
     const crumbs = document.querySelector("#explorer-breadcrumbs");
     crumbs.replaceChildren();
@@ -784,6 +788,29 @@
     if (currentCategory === "explorer") renderCategoryList("explorer");
   }
   window.addEventListener("macwipe:explorer", ({ detail }) => receiveExplorer(detail));
+  window.addEventListener("macwipe:busy", ({ detail }) => {
+    document.querySelector("#btn-cancel-scan").hidden = !["requestScan", "requestExplorer"].includes(detail.action);
+  });
+  window.addEventListener("macwipe:progress", ({ detail }) => {
+    const message = `Scanning ${categoryTitles[detail.category] || detail.category} · ${detail.processedCount} entries processed.`;
+    scanStatus.textContent = message;
+    if (detail.category === "Storage explorer") document.querySelector("#explorer-status").textContent = message;
+  });
+  window.addEventListener("macwipe:cancelled", ({ detail }) => {
+    for (const key of detail.refreshed || []) {
+      const category = categories[key]; if (!category) continue;
+      category.cancelled = true;
+      for (const item of category.items) { item.canClean = false; item.scanCancelled = true; selected.delete(item.id); }
+      cachedRows.delete(key);
+    }
+    const key = currentCategory;
+    switchCategory(key);
+    setScanState("partial", "Scan cancelled. Last completed results retained; rescan before cleanup of cancelled categories.");
+    if (detail.status === "cancelled") {
+      renderExplorerStatus();
+      document.querySelector("#explorer-status").textContent += " · New scan cancelled; last completed results retained.";
+    }
+  });
   function inventorySummary(category) {
     if (!category) return "Not scanned.";
     if (isNative && !category.available) return "Not scanned.";
@@ -842,7 +869,7 @@
     });
 
     nativeUI.receiveScanData = function (payload) {
-      if (receiveScanData) receiveScanData.call(this, payload);
+      if (receiveScanData && receiveScanData.call(this, payload) === false) return;
       renderHomeStorage(payload.storage ?? null);
 
       for (const [key, category] of Object.entries(categories)) {
@@ -851,6 +878,7 @@
         if (!source) continue;
         if (payload.refreshed && !payload.refreshed.includes(key)) continue;
         category.available = !!source;
+        category.cancelled = false;
         category.error = source?.error;
         category.skippedPaths = source?.skippedPaths || 0;
         category.skippedLocations = source?.skippedLocations || [];
