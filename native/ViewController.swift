@@ -844,7 +844,11 @@ private final class FileWorker: @unchecked Sendable {
                 result.errors.append("Category is unavailable or cannot be cleaned. Scan again.")
                 return result
             }
-            let paths = selection.paths ?? Array(items.keys)
+            // Legacy category-wide requests must obey the same bulk policy as
+            // the shared UI. Review-carefully items require explicit paths.
+            let paths = selection.paths ?? items.compactMap { path, item in
+                category == .caches && recognizedCache(item.measured.url, root: item.root) != nil ? path : nil
+            }
             guard !paths.isEmpty, paths.count <= items.count,
                   paths.allSatisfy({ items[$0] != nil }) else {
                 result.errors.append("A requested path was not approved by the last scan.")

@@ -161,7 +161,8 @@
           const id = typeof entry === "string" ? entry : entry?.id;
           const scan = lastScan?.categories?.[id];
           if (!allowedCategories.has(id) || !scan?.canClean) return false;
-          if (typeof entry === "string") return true;
+          if (typeof entry === "string") return scan.items.some((item) => item.canClean === true
+            && item.kind === "cache" && item.reviewClassification === "temporary" && item.bulkSelectionEligible === true);
           return Array.isArray(entry.paths) && entry.paths.length > 0
             && entry.paths.every((path) => scan.items.some((item) => item.path === path && item.canClean === true));
         });

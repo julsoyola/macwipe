@@ -546,7 +546,29 @@ private func runCleanupReportTests() throws {
     print("PASS: mixed Trash success/failure outcomes, moved names/count/logical bytes, separate failure paths, and no space-freed claim; all mutations mocked.")
 }
 
+private func runBulkPolicyTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("bulk-rule/home")
+    _ = try writeFixture("Library/Caches/pip/http-v2/response", under: home)
+    _ = try writeFixture("Library/Caches/unknown/data", under: home)
+    _ = try writeFixture("Library/Logs/log", under: home)
+    var moved: [String] = []
+    let worker = FileWorker(home: home, systemRoot: nativeTestSystem, trashItem: { moved.append($0.path) })
+    _ = worker.scan(scope: [.caches, .logs])
+    let bulk = try JSONDecoder().decode([CleanupSelection].self, from: Data("[\"caches\"]".utf8))
+    let result = worker.cleanup(bulk)
+    precondition(result.movedCount == 1 && result.errors.isEmpty && moved[0].hasSuffix("/pip/http-v2"))
+    let logs = try JSONDecoder().decode([CleanupSelection].self, from: Data("[\"logs\"]".utf8))
+    let rejected = worker.cleanup(logs)
+    precondition(rejected.movedCount == 0 && !rejected.errors.isEmpty && moved.count == 1)
+    let refreshed = worker.scan(scope: [.caches, .logs])
+    let unknown = refreshed.categories["caches"]!.items.first { $0.name == "unknown" }!
+    let individual = worker.cleanup(try selections([("caches", [unknown.path])]))
+    precondition(individual.movedCount == 1 && individual.errors.isEmpty)
+    print("PASS: legacy bulk includes only recognized caches; review-carefully category bulk rejected; individual unknown-cache cleanup preserved; Trash mocked.")
+}
+
 try runScannerTests()
+try runBulkPolicyTests()
 try runCleanupReportTests()
 MainActor.assumeIsolated { runCPUTests() }
 try runCancellationTests()
