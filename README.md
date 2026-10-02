@@ -3,6 +3,8 @@
 A quiet, retro Mac cleanup dashboard demo. Built with HTML, CSS, and vanilla
 JavaScript. No install, build step, account, or runtime dependencies.
 
+**Use the public demo:** https://macwipe.vercel.app
+
 **Example data only:** the demo cannot scan your Mac or delete files.
 Simulate cleanup clears selections. Chat messages stay in browser memory;
 there are no server requests, analytics, or saved chat history.
@@ -56,3 +58,8 @@ After downloading, the demo works offline.
 - `docs/screenshots/`: small README previews.
 
 MIT license. Only the web demo is included; no native cleanup tools are shipped.
+
+## Hosting
+
+Hosted on Vercel as a static site. Deploy the `website/` directory;
+`website/vercel.json` defines the configuration. No build step is needed.
