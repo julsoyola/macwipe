@@ -13,6 +13,15 @@
     };
   }
 
+  function uniqueItems(items) {
+    const seen = new Set();
+    return items.filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }
+
   const categories = isNative
     ? Object.fromEntries(
         Object.entries(MacwipeData).map(([key, category]) => [
@@ -26,7 +35,7 @@
       )
     : Object.fromEntries(Object.entries(MacwipeData).map(([key, category]) => [
         key,
-        { ...category, items: category.items.map((item, originalScanIndex) => ({
+        { ...category, items: uniqueItems(category.items).map((item, originalScanIndex) => ({
           ...item, ...itemMetadata(item), originalScanIndex,
           bytes: !item.info && Number.isFinite(item.mb) && item.mb >= 0
             ? item.mb * 1_000_000 : null,
@@ -34,9 +43,9 @@
       ]));
 
   const { formatMB, createChat } = MacwipeUI;
-  let allItems = Object.values(categories).flatMap(
+  let allItems = uniqueItems(Object.values(categories).flatMap(
     (category) => category.items || [],
-  );
+  ));
   const itemById = new Map(allItems.map((item) => [item.id, item]));
   const selected = new Set();
   const cachedRows = new Map();
@@ -44,6 +53,7 @@
   const checkboxById = new Map();
   let currentCategory = null;
   let selectedMB = 0;
+  let selectedSizeLabel = formatMB(0);
   let hasCompletedScan = false;
 
   // Resolve persistent DOM nodes once; event handlers reuse these references.
@@ -119,24 +129,31 @@
             ? item.canClean === true
             : item.canClean !== false && (key !== "downloads" || item.ageDays > 90)),
       );
+      items = uniqueItems(items);
       if (isNative) {
         items = [...new Map(items.map((item) => [item.path, item])).values()];
       }
+      const partial = isNative && (category.error || category.skippedPaths > 0);
       count.textContent = items.length
         ? `${items.length} eligible ${isNative ? "" : "example "}${items.length === 1 ? "item" : "items"}`
         : isNative ? "No eligible items found in accessible results."
           : "No eligible example items.";
-      if (isNative && (category.error || category.skippedPaths > 0)) {
+      if (partial) {
+        if (!items.length) count.textContent = "No eligible items returned in partial results.";
         count.textContent += " · Partial scan";
       }
-      const amount = items.reduce(
-        (sum, item) => sum + (isNative ? item.bytes : item.mb), 0,
+      const known = items.filter((item) => Number.isFinite(item.bytes));
+      const amount = known.reduce(
+        (sum, item) => sum + item.bytes, 0,
       );
       const formatted = isNative
         ? amount < 1_000_000 ? `${amount.toLocaleString("en-US")} bytes`
           : formatMB(amount / 1_000_000)
-        : formatMB(amount);
-      size.textContent = `${formatted} available for review`;
+        : formatMB(amount / 1_000_000);
+      size.textContent = items.length && !known.length
+        ? "Size unavailable"
+        : !items.length && partial ? "Size unavailable"
+          : `${formatted} available for review${known.length < items.length ? " · Some sizes unavailable" : ""}`;
       button.disabled = items.length === 0;
     });
   }
@@ -262,7 +279,12 @@
 
   function updateSelection() {
     const count = selected.size;
-    const summary = `Selected: ${count} ${count === 1 ? "item" : "items"} · ${formatMB(selectedMB)}`;
+    const items = [...selected].map((id) => itemById.get(id));
+    const known = items.filter((item) => Number.isFinite(item.bytes));
+    selectedMB = known.reduce((sum, item) => sum + item.bytes, 0) / 1_000_000;
+    selectedSizeLabel = count && !known.length ? "Size unavailable"
+      : `${formatMB(selectedMB)}${known.length < count ? " · Some sizes unavailable" : ""}`;
+    const summary = `Selected: ${count} ${count === 1 ? "item" : "items"} · ${selectedSizeLabel}`;
     if (selectionStatus.textContent !== summary)
       selectionStatus.textContent = summary;
     reviewButton.disabled = count === 0;
@@ -281,7 +303,6 @@
     if (selected.has(item.id) !== checked) {
       if (checked) selected.add(item.id);
       else selected.delete(item.id);
-      selectedMB += checked ? item.mb : -item.mb;
     }
     const checkbox = checkboxById.get(item.id);
     if (checkbox && checkbox.checked !== checked) checkbox.checked = checked;
@@ -444,7 +465,11 @@
       const row = document.createElement("tr");
       const cell = document.createElement("td");
       cell.colSpan = 4;
-      cell.textContent = "No accessible eligible items found.";
+      cell.textContent = !category.available
+        ? "Scan results are unavailable for this category."
+        : category.error || category.skippedPaths > 0
+          ? "No eligible items returned. Some paths were skipped or unreadable; results are incomplete."
+          : "No accessible eligible items found.";
       row.append(cell);
       fragment.append(row);
     }
@@ -489,7 +514,7 @@
       fragment.append(entry);
     });
     reviewList.replaceChildren(fragment);
-    reviewTotal.textContent = formatMB(selectedMB);
+    reviewTotal.textContent = selectedSizeLabel;
     reviewDialog.showModal();
   }
 
@@ -622,16 +647,17 @@
         category.available = !!source;
         category.error = source?.error;
         category.skippedPaths = source?.skippedPaths || 0;
-        category.items = (source?.items || []).map((file, originalScanIndex) => ({
+        category.items = uniqueItems(source?.items || []).map((file, originalScanIndex) => ({
           ...itemMetadata(file),
           originalScanIndex,
           id: file.id,
           category: file.category,
           path: file.path,
           name: file.name,
-          mb: file.bytes / 1_000_000,
+          mb: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes / 1_000_000 : null,
           bytes: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes : null,
-          info: file.formatted || formatMB(file.bytes / 1_000_000),
+          info: Number.isFinite(file.bytes) && file.bytes >= 0
+            ? file.formatted || formatMB(file.bytes / 1_000_000) : "Size unavailable",
           details: `${file.path}. ${payload.sizeMeaning || ""}`,
           canClean: file.canClean === true,
         }));
@@ -660,7 +686,9 @@
       const skipped = scanned.reduce(
         (sum, category) => sum + (category.skippedPaths || 0), 0,
       );
-      const incomplete = scanned.some((category) => category.error) || skipped > 0;
+      const incomplete = scanned.some((category) => category.error) || skipped > 0
+        || Object.values(categories).some((category) => !category.available
+          || category.items.some((item) => item.bytes === null));
       const hasItems = scanned.some((category) =>
         category.items.some((item) => item.canClean === true),
       );
@@ -678,10 +706,11 @@
 
     nativeUI.onCleanupComplete = function (freedMB, result = {}) {
       if (onCleanupComplete) onCleanupComplete.call(this, freedMB, result);
-      reviewIntro.textContent = "Cleanup complete.";
+      reviewIntro.textContent = "Cleanup finished. Logical size moved to Trash:";
       reviewList.replaceChildren();
-      reviewTotal.textContent = formatMB(result.diskFreedMB ?? freedMB);
-      reviewNotice.textContent = `Disk space freed: ${formatMB(result.diskFreedMB ?? freedMB)}.`;
+      const movedMB = Number.isFinite(result.movedBytes) ? result.movedBytes / 1_000_000 : freedMB;
+      reviewTotal.textContent = Number.isFinite(movedMB) ? formatMB(movedMB) : "Size unavailable";
+      reviewNotice.textContent = "Available-space change has not been measured. Files in Trash still occupy space.";
       confirmButton.hidden = true;
       confirmButton.style.display = "none";
       if (!reviewDialog.open) reviewDialog.showModal();
