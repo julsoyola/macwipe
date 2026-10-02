@@ -326,6 +326,32 @@
     return row;
   }
 
+  function itemDetails(item) {
+    const explanations = {
+      "unmatched-support": "No matching installed app was found. This does not prove the folder is unused. It may contain settings, mods, or personal data.",
+      cache: "Temporary app data listed from a cache location. Apps may recreate it after removal; review it before removing.",
+      "older-download": "A downloaded file listed because it is more than 90 days old. Age does not mean it is unnecessary; keep anything you still need.",
+      application: "An application listed in an application folder. Moving it to Trash does not run its vendor uninstaller and may leave support files behind.",
+      "startup-file": "Startup configuration listed for review. Removing it may affect future launches and does not stop an already running service.",
+      log: "Diagnostic information listed from a log location. Removing it may discard information useful for troubleshooting.",
+      "browser-data": "Local browser data listed for review. Removing it may affect history, sessions, or sign-in state.",
+    };
+    const explanation = (Object.hasOwn(explanations, item.kind) ? explanations[item.kind] : "")
+      || (!isNative && item.details)
+      || "An item listed for review. Its purpose is not established; removing it may affect app behavior or personal data.";
+    const size = Number.isFinite(item.bytes) && item.bytes >= 0
+      ? `${item.bytes.toLocaleString("en-US")} bytes`
+      : !isNative && !item.info && Number.isFinite(item.mb) && item.mb >= 0
+        ? formatMB(item.mb) : "Not available";
+    return [
+      !isNative ? "Demo example. No files are read or changed." : "",
+      explanation,
+      item.path ? `Path: ${item.path}` : "",
+      `Logical file size: ${size}`,
+      item.info ? `Size/Info: ${item.info}` : "",
+    ].filter(Boolean).join("\n");
+  }
+
   function switchCategory(key) {
     const isHome = key === "home";
     if (!isHome && !Object.hasOwn(categories, key)) return;
@@ -463,7 +489,7 @@
     else if (button.dataset.category) switchCategory(button.dataset.category);
     else if (button.dataset.details) {
       const item = itemById.get(button.dataset.details);
-      if (item) openDetails(`Tell me about ${item.name}.`, item.details);
+      if (item) openDetails(`Tell me about ${item.name}.`, itemDetails(item));
     } else if (Object.hasOwn(actions, button.dataset.action)) {
       actions[button.dataset.action]();
     }

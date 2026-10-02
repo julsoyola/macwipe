@@ -316,6 +316,9 @@
   margin-top: 4px;
   font-size: 12px;
 }
+.dashboard-body [data-message="answer"] {
+  white-space: pre-line;
+}
 .item-list th:first-child,
 .item-list td:first-child {
   width: 76px;
