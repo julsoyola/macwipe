@@ -487,7 +487,35 @@ private func runCancellationTests() throws {
     print("PASS: real traversal progress, cooperative cancellation, retained completed timestamp, cancelled approvals rejected, unrelated approvals preserved, fresh scan restores cleanup; Trash mocked.")
 }
 
+@MainActor private func runCPUTests() {
+    var calculation = CPUCalculation()
+    precondition(calculation.sample([100, 100, 100, 100]).cpuState == "measuring")
+    let half = calculation.sample([125, 125, 175, 125])
+    precondition(half.cpuPercent == 50 && half.sampledAt != nil)
+    precondition(calculation.sample([125, 125, 175, 125]).cpuState == "unavailable")
+    precondition(calculation.sample(nil).cpuState == "unavailable")
+    precondition(calculation.sample([10, 0, 0, 0]).cpuState == "measuring")
+    precondition(calculation.sample([20, 0, 0, 0]).cpuPercent == 100)
+    calculation.reset()
+    _ = calculation.sample([0, 0, UInt32.max - 4, 0])
+    precondition(calculation.sample([5, 0, 0, 0]).cpuPercent == 50)
+    calculation.reset()
+    _ = calculation.sample([1000, 1000, 1000, 1000])
+    precondition(calculation.sample([0, 0, 0, 0]).cpuState == "unavailable")
+    var readings: [CPUReading] = []
+    let sampler = CPUSampler(readTicks: { [1, 1, 1, 1] }, publish: { readings.append($0) })
+    sampler.start(); sampler.start()
+    precondition(sampler.isRunning && readings.count == 1 && readings[0].cpuState == "measuring")
+    sampler.stop(); sampler.stop()
+    precondition(!sampler.isRunning && readings.last!.cpuState == "unavailable")
+    sampler.start()
+    precondition(readings.last!.cpuState == "measuring")
+    sampler.stop()
+    print("PASS: CPU aggregate percentages, first sample, zero/failed/invalid deltas, rollover, one timer, stop and fresh resume; tick source mocked.")
+}
+
 try runScannerTests()
+MainActor.assumeIsolated { runCPUTests() }
 try runCancellationTests()
 try runScopedScanTests()
 try runExplorerTests()

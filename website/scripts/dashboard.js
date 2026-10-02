@@ -455,6 +455,7 @@
     const isHome = key === "home";
     if (!isHome && !Object.hasOwn(categories, key)) return;
     currentCategory = key;
+    if (isNative) window.macwipeUI.metricsVisible(isHome && !document.hidden);
     document.querySelector("#startup-settings").hidden = key !== "startup";
     document.querySelector("#explorer-controls").hidden = key !== "explorer";
     document.querySelector("#btn-preview-scan").hidden = key === "explorer";
@@ -805,6 +806,9 @@
       ? `${isNative ? "Sampled" : "Example updated"}: ${new Date(payload.sampledAt * 1000).toLocaleTimeString()}` : "No current sample.";
   }
   window.addEventListener("macwipe:metrics", ({ detail }) => renderMetrics(detail));
+  document.addEventListener("visibilitychange", () => {
+    if (isNative) window.macwipeUI.metricsVisible(currentCategory === "home" && !document.hidden);
+  });
   document.querySelector("#metric-example-label").hidden = isNative;
   if (!isNative) {
     document.querySelector(".system-details summary").textContent = "Examples";

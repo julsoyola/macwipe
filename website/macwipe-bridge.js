@@ -133,6 +133,9 @@
     openStorageSettings() { return post("openStorageSettings"); },
     openActivityMonitor() { return post("openActivityMonitor"); },
     receiveMetrics(payload) { emit("metrics", payload); },
+    metricsVisible(visible) {
+      window.webkit?.messageHandlers?.macwipeBridge?.postMessage({ action: "setMetricsVisible", visible });
+    },
     explore(id) { return postScan("requestExplorer", id ? { id } : {}); },
     receiveExplorerData(payload) { if (acceptScan(payload)) emit("explorer", payload); },
     cancelScan() {

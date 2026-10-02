@@ -15,6 +15,9 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
     private var busy = false
     private var pageGeneration = 0
     private var activeScan: (id: Int, control: ScanControl)?
+    private var metricsVisible = false
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private lazy var cpuSampler = CPUSampler { [weak self] reading in self?.send("receiveMetrics", reading) }
     private let worker = FileWorker()
     private let explorer = StorageExplorer()
     private let fileQueue = DispatchQueue(label: "macwipe.files", qos: .userInitiated)
@@ -38,6 +41,23 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
         view.addSubview(browser, positioned: .below, relativeTo: launchView)
         webView = browser
         loadDashboard()
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                     NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
+                     NSWindow.didDeminiaturizeNotification, NSWindow.willCloseNotification] {
+            lifecycleObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.updateMetricLifecycle() }
+            })
+        }
+    }
+
+    deinit { for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) } }
+
+    override func viewDidAppear() { super.viewDidAppear(); updateMetricLifecycle() }
+
+    private func updateMetricLifecycle() {
+        let visible = metricsVisible && NSApplication.shared.isActive && view.window?.isVisible == true
+            && view.window?.isMiniaturized == false && view.window?.occlusionState.contains(.visible) == true
+        if visible { cpuSampler.start() } else { cpuSampler.stop() }
     }
 
     private func loadDashboard() {
@@ -124,6 +144,8 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         pageGeneration += 1
         activeScan?.control.cancel()
+        metricsVisible = false
+        cpuSampler.stop()
         showLaunchState("Opening macwipe…")
     }
 
@@ -153,6 +175,12 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
               let body = message.body as? [String: Any],
               let action = body["action"] as? String else { return }
 
+        if action == "setMetricsVisible" {
+            guard body.count == 2, let visible = body["visible"] as? Bool else { return }
+            metricsVisible = visible
+            updateMetricLifecycle()
+            return
+        }
         if action == "cancelScan" {
             if body.count == 2, let id = body["requestID"] as? Int, activeScan?.id == id {
                 activeScan?.control.cancel()
@@ -1216,6 +1244,80 @@ private final class StorageExplorer: @unchecked Sendable {
         progress(processed)
         if processed == processedBefore && localSkipped > 0 { return (nil, "unavailable") }
         return (bytes, changed ? "changed" : localSkipped > 0 ? "partial" : "complete")
+    }
+}
+
+private struct CPUReading: Encodable, Sendable {
+    let cpuPercent: Double?
+    let cpuState: String
+    let sampledAt: TimeInterval?
+}
+
+private struct CPUCalculation {
+    private var previous: [UInt32]?
+    mutating func reset() { previous = nil }
+    mutating func sample(_ ticks: [UInt32]?) -> CPUReading {
+        guard let ticks, ticks.count == 4 else { previous = nil; return CPUReading(cpuPercent: nil, cpuState: "unavailable", sampledAt: nil) }
+        defer { previous = ticks }
+        guard let previous else { return CPUReading(cpuPercent: nil, cpuState: "measuring", sampledAt: nil) }
+        let delta = zip(ticks, previous).map { UInt64($0 &- $1) }
+        // Wrapping subtraction handles normal 32-bit rollover. An implausibly
+        // large delta indicates reset/invalid counters and establishes a baseline.
+        guard delta.allSatisfy({ $0 <= UInt32.max / 2 }) else { return CPUReading(cpuPercent: nil, cpuState: "unavailable", sampledAt: nil) }
+        let total = delta.reduce(UInt64(0), +)
+        guard total > 0 else { return CPUReading(cpuPercent: nil, cpuState: "unavailable", sampledAt: nil) }
+        let busy = total - delta[Int(CPU_STATE_IDLE)]
+        return CPUReading(cpuPercent: Double(busy) / Double(total) * 100, cpuState: "current", sampledAt: Date().timeIntervalSince1970)
+    }
+}
+
+@MainActor
+private final class CPUSampler {
+    private var timer: Timer?
+    private var calculation = CPUCalculation()
+    private var generation = 0
+    private let readTicks: () -> [UInt32]?
+    private let publish: (CPUReading) -> Void
+    var isRunning: Bool { timer != nil }
+    init(readTicks: @escaping () -> [UInt32]? = CPUSampler.readTicks, publish: @escaping (CPUReading) -> Void) {
+        self.readTicks = readTicks; self.publish = publish
+    }
+    deinit { timer?.invalidate() }
+    func start() {
+        guard timer == nil else { return }
+        calculation.reset(); sample()
+        generation += 1
+        let token = generation
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.generation == token, self.timer != nil else { return }
+                self.sample()
+            }
+        }
+        timer?.tolerance = 0.4
+    }
+    func stop() {
+        guard timer != nil else { return }
+        generation += 1
+        timer?.invalidate(); timer = nil; calculation.reset()
+        publish(CPUReading(cpuPercent: nil, cpuState: "unavailable", sampledAt: nil))
+    }
+    func sample() { publish(calculation.sample(readTicks())) }
+    // Public Mach host statistics aggregate ticks across CPUs; no subprocess.
+    // https://developer.apple.com/documentation/kernel/host_cpu_load_info_t
+    nonisolated private static func readTicks() -> [UInt32]? {
+        var info = host_cpu_load_info_data_t()
+        let expected = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
+        var count = expected
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(expected)) {
+                host_statistics(host, host_flavor_t(HOST_CPU_LOAD_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS, count >= expected else { return nil }
+        return [info.cpu_ticks.0, info.cpu_ticks.1, info.cpu_ticks.2, info.cpu_ticks.3]
     }
 }
 
