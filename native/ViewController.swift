@@ -273,6 +273,10 @@ private struct ScanItem: Encodable, Sendable {
     let bytes: UInt64
     let formatted: String
     let canClean: Bool
+    let kind: String
+    let reviewClassification: String
+    let bulkSelectionEligible: Bool
+    let homeRecommendationEligible: Bool
 }
 
 private struct CategoryScan: Encodable, Sendable {
@@ -497,10 +501,24 @@ private final class FileWorker: @unchecked Sendable {
                 let nextEligibleBytes = try adding(result.eligibleBytes, measured.bytes)
                 approved[category, default: [:]][url.path] = ApprovedItem(root: root, measured: measured)
                 let unmatched = category == .applications && root.lastPathComponent == "Application Support"
+                let kind: String
+                switch category {
+                case .caches: kind = "cache"
+                case .downloads: kind = "older-download"
+                case .applications: kind = unmatched ? "unmatched-support" : "application"
+                case .startup: kind = "startup-file"
+                case .logs, .performance: kind = "log"
+                case .privacy: kind = "browser-data"
+                case .trash: kind = "trash-item"
+                }
                 result.items.append(ScanItem(id: "\(category.rawValue):\(url.path)",
                     category: category.rawValue, path: url.path,
                     name: unmatched ? "Unmatched support · \(url.lastPathComponent)" : url.lastPathComponent,
-                    bytes: measured.bytes, formatted: format(measured.bytes), canClean: true))
+                    bytes: measured.bytes, formatted: format(measured.bytes), canClean: true,
+                    kind: kind,
+                    reviewClassification: category == .caches ? "temporary" : "review-carefully",
+                    bulkSelectionEligible: category == .caches,
+                    homeRecommendationEligible: category == .caches || category == .downloads))
                 result.eligibleBytes = nextEligibleBytes
             }
             result.bytes = nextBytes

@@ -69,6 +69,21 @@ private func runScannerTests() throws {
     precondition(scan.categories["downloads"]!.items.map(\.name) == ["stale.zip"])
     precondition(scan.categories["downloads"]!.skippedPaths == 0)
     precondition(scan.categories["applications"]!.items.count == 4)
+    let unmatched = scan.categories["applications"]!.items.first {
+        $0.path.hasSuffix("/UnknownApp")
+    }!
+    precondition(unmatched.kind == "unmatched-support")
+    precondition(unmatched.reviewClassification == "review-carefully")
+    precondition(!unmatched.bulkSelectionEligible && !unmatched.homeRecommendationEligible)
+    precondition(unmatched.canClean)
+    precondition(scan.categories["caches"]!.items.allSatisfy {
+        $0.kind == "cache" && $0.reviewClassification == "temporary"
+            && $0.bulkSelectionEligible && $0.homeRecommendationEligible
+    })
+    precondition(scan.categories["downloads"]!.items.allSatisfy {
+        $0.kind == "older-download" && $0.reviewClassification == "review-carefully"
+            && !$0.bulkSelectionEligible && $0.homeRecommendationEligible
+    })
     precondition(!scan.categories["applications"]!.items.contains { $0.path.hasSuffix("/Google") })
     precondition(scan.categories["startup"]!.items.count == 3)
     precondition(scan.categories["performance"]!.items.count == 2)
@@ -92,6 +107,13 @@ private func runScannerTests() throws {
     precondition((categories["caches"]!["skippedPaths"] as! Int) > 0)
     let item = (categories["applications"]!["items"] as! [[String: Any]])[0]
     precondition(["id", "category", "path", "name", "bytes", "formatted", "canClean"].allSatisfy { item[$0] != nil })
+    let encodedUnmatched = (categories["applications"]!["items"] as! [[String: Any]]).first {
+        ($0["path"] as! String) == unmatched.path
+    }!
+    precondition(encodedUnmatched["kind"] as? String == "unmatched-support")
+    precondition(encodedUnmatched["reviewClassification"] as? String == "review-carefully")
+    precondition(encodedUnmatched["bulkSelectionEligible"] as? Bool == false)
+    precondition(encodedUnmatched["homeRecommendationEligible"] as? Bool == false)
 
     let all: [(String, [String])] = Category.allCases.filter { $0 != .trash }.map { category in
         (category.rawValue, scan.categories[category.rawValue]!.items.map(\.path))

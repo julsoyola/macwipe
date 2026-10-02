@@ -22,6 +22,10 @@
       items: [
         {
           id: "old-backup",
+          kind: "backup",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Old device backup",
           mb: 1240,
           details:
@@ -29,6 +33,10 @@
         },
         {
           id: "disk-image",
+          kind: "disk-image",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Archived disk image",
           mb: 680,
           details:
@@ -36,6 +44,10 @@
         },
         {
           id: "exports",
+          kind: "export",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Temporary video exports",
           mb: 320,
           details:
@@ -49,6 +61,10 @@
       items: [
         {
           id: "browser-cache",
+          kind: "cache",
+          reviewClassification: "temporary",
+          bulkSelectionEligible: true,
+          homeRecommendationEligible: true,
           name: "Browser image cache",
           mb: 240,
           details:
@@ -56,6 +72,10 @@
         },
         {
           id: "thumbnail-cache",
+          kind: "cache",
+          reviewClassification: "temporary",
+          bulkSelectionEligible: true,
+          homeRecommendationEligible: true,
           name: "Thumbnail cache",
           mb: 85,
           details:
@@ -63,6 +83,10 @@
         },
         {
           id: "app-cache",
+          kind: "cache",
+          reviewClassification: "temporary",
+          bulkSelectionEligible: true,
+          homeRecommendationEligible: true,
           name: "Application cache",
           mb: 120,
           details:
@@ -76,6 +100,10 @@
       items: [
         {
           id: "installer",
+          kind: "older-download",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: true,
           name: "Previous installer.dmg",
           ageDays: 120,
           mb: 420,
@@ -84,6 +112,10 @@
         },
         {
           id: "archive",
+          kind: "older-download",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: true,
           name: "Project archive.zip",
           ageDays: 180,
           mb: 156,
@@ -92,6 +124,10 @@
         },
         {
           id: "document",
+          kind: "older-download",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: true,
           name: "Reference notes.pdf",
           ageDays: 95,
           mb: 12,
@@ -106,6 +142,10 @@
       items: [
         {
           id: "photo-app",
+          kind: "application",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Unused photo editor",
           mb: 860,
           details:
@@ -113,6 +153,10 @@
         },
         {
           id: "trial-app",
+          kind: "application",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Expired trial app",
           mb: 210,
           details:
@@ -120,10 +164,25 @@
         },
         {
           id: "legacy-app",
+          kind: "application",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Legacy media player",
           mb: 95,
           details:
             "A fictional older player. Confirm another installed application supports the files you use.",
+        },
+        {
+          id: "unmatched-support",
+          name: "Example game support",
+          kind: "unmatched-support",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
+          mb: 48,
+          details:
+            "No matching installed app was found. This does not prove the folder is unused. It may contain settings, mods, or personal data.",
         },
       ],
     },
@@ -134,6 +193,10 @@
       items: [
         {
           id: "sync-login",
+          kind: "startup-file",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Example sync helper",
           mb: 0,
           info: "Login item",
@@ -142,6 +205,10 @@
         },
         {
           id: "menu-login",
+          kind: "startup-file",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Example menu utility",
           mb: 0,
           info: "Login item",
@@ -150,6 +217,10 @@
         },
         {
           id: "update-login",
+          kind: "startup-file",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Example update agent",
           mb: 0,
           info: "Background item",
@@ -165,6 +236,10 @@
       items: [
         {
           id: "cpu-task",
+          kind: "activity-example",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Example background task",
           mb: 0,
           info: "18% CPU",
@@ -173,6 +248,10 @@
         },
         {
           id: "memory-app",
+          kind: "activity-example",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Example memory-heavy app",
           mb: 0,
           info: "640 MB RAM",
@@ -181,6 +260,10 @@
         },
         {
           id: "indexing",
+          kind: "activity-example",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Example indexing task",
           mb: 0,
           info: "Active",
@@ -195,6 +278,10 @@
       items: [
         {
           id: "history",
+          kind: "browser-data",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Browser history",
           mb: 8,
           details:
@@ -202,6 +289,10 @@
         },
         {
           id: "site-data",
+          kind: "browser-data",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Website data",
           mb: 32,
           details:
@@ -209,6 +300,10 @@
         },
         {
           id: "recent-items",
+          kind: "browser-data",
+          reviewClassification: "review-carefully",
+          bulkSelectionEligible: false,
+          homeRecommendationEligible: false,
           name: "Recent items list",
           mb: 0,
           info: "12 shortcuts",

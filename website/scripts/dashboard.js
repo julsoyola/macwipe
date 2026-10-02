@@ -3,6 +3,16 @@
 
   const isNative = !!window.webkit?.messageHandlers?.macwipeBridge;
 
+  function itemMetadata(item) {
+    return {
+      kind: item.kind || "unknown",
+      reviewClassification: item.kind === "cache" && item.reviewClassification === "temporary"
+        ? "temporary" : "review-carefully",
+      bulkSelectionEligible: item.bulkSelectionEligible === true,
+      homeRecommendationEligible: item.homeRecommendationEligible === true,
+    };
+  }
+
   const categories = isNative
     ? Object.fromEntries(
         Object.entries(MacwipeData).map(([key, category]) => [
@@ -14,7 +24,10 @@
           },
         ]),
       )
-    : MacwipeData;
+    : Object.fromEntries(Object.entries(MacwipeData).map(([key, category]) => [
+        key,
+        { ...category, items: category.items.map((item) => ({ ...item, ...itemMetadata(item) })) },
+      ]));
 
   const { formatMB, createChat } = MacwipeUI;
   let allItems = Object.values(categories).flatMap(
@@ -490,6 +503,7 @@
         category.error = source?.error;
         category.skippedPaths = source?.skippedPaths || 0;
         category.items = (source?.items || []).map((file) => ({
+          ...itemMetadata(file),
           id: file.id,
           category: file.category,
           path: file.path,
