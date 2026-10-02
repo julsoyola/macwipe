@@ -867,4 +867,172 @@ private final class FileWorker: @unchecked Sendable {
     }
 }
 
+// A separate, read-only engine. Nothing here registers a cleanup target.
+private final class ScanControl: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped = false
+    func cancel() { lock.lock(); stopped = true; lock.unlock() }
+    var cancelled: Bool { lock.lock(); defer { lock.unlock() }; return stopped }
+}
+
+private struct ExplorerItem: Encodable, Sendable {
+    let id: String
+    let name: String
+    let path: String
+    let bytes: UInt64?
+    let status: String
+    let directory: Bool
+    let package: Bool
+    let canClean = false
+}
+
+private struct ExplorerResult: Encodable, Sendable {
+    let items: [ExplorerItem]
+    let status: String
+    let scannedAt: TimeInterval
+    let processedCount: Int
+    let skippedCount: Int
+    let bytes: UInt64?
+}
+
+private final class StorageExplorer: @unchecked Sendable {
+    private let manager = FileManager.default
+    private let home: URL
+    private let systemRoot: URL
+    private let cloudOnly: (URL) throws -> Bool
+    private var inventory: [String: (URL, EntryStamp)] = [:]
+    private var approvedRoots: [URL] = []
+    private struct EntryStamp: Equatable {
+        let device: dev_t
+        let inode: ino_t
+        let kind: mode_t
+        let bytes: Int64
+        let modified: Int
+        let modifiedNanos: Int
+        let changed: Int
+        let changedNanos: Int
+    }
+
+    init(home: URL = FileManager.default.homeDirectoryForCurrentUser,
+         systemRoot: URL = URL(fileURLWithPath: "/"),
+         cloudOnly: @escaping (URL) throws -> Bool = { url in
+             // Metadata only; never request or read cloud document contents.
+             let values = try url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
+             return values.isUbiquitousItem == true && values.ubiquitousItemDownloadingStatus != .current
+         }) {
+        self.home = home.resolvingSymlinksInPath().standardizedFileURL
+        self.systemRoot = systemRoot
+        self.cloudOnly = cloudOnly
+    }
+
+    func scan(control: ScanControl = ScanControl(), progress: (Int) -> Void = { _ in }) -> ExplorerResult {
+        inventory.removeAll()
+        approvedRoots.removeAll()
+        var items: [ExplorerItem] = []
+        var processed = 0
+        var skipped = 0
+        let device = try? stamp(home).device
+        let candidates = ["Downloads", "Documents", "Desktop", "Movies", "Music", "Pictures", "Applications"]
+            .map { home.appendingPathComponent($0) } + [systemRoot.appendingPathComponent("Applications")]
+        for source in candidates {
+            if control.cancelled { break }
+            let root = source.resolvingSymlinksInPath().standardizedFileURL
+            // Redirects must remain in the home tree; external/network roots are excluded.
+            let withinHome = root.path.hasPrefix(home.path + "/")
+            let sameSystemPath = root.path == source.standardizedFileURL.path && source.path.hasPrefix(systemRoot.appendingPathComponent("Applications").path)
+            if approvedRoots.contains(where: { root.path == $0.path || root.path.hasPrefix($0.path + "/") }) { continue }
+            guard withinHome || sameSystemPath, let metadata = try? stamp(root),
+                  metadata.kind == S_IFDIR, metadata.device == device,
+                  (try? root.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) == true else {
+                skipped += 1
+                items.append(ExplorerItem(id: UUID().uuidString, name: source.lastPathComponent, path: source.path,
+                    bytes: nil, status: "unavailable", directory: true, package: false))
+                continue
+            }
+            // A later parent root supersedes previously discovered nested roots.
+            let nested = approvedRoots.filter { $0.path.hasPrefix(root.path + "/") }
+            approvedRoots.removeAll { nested.contains($0) }
+            items.removeAll { nested.contains(URL(fileURLWithPath: $0.path)) }
+            inventory = inventory.filter { !nested.contains($0.value.0) }
+            approvedRoots.append(root)
+            let measurement = measure(root, device: metadata.device, control: control, processed: &processed,
+                                      skipped: &skipped, progress: progress)
+            let id = UUID().uuidString
+            if measurement.status != "cancelled" { inventory[id] = (root, metadata) }
+            items.append(ExplorerItem(id: id, name: source.lastPathComponent, path: root.path,
+                bytes: measurement.bytes, status: measurement.status, directory: true, package: false))
+        }
+        let status = control.cancelled ? "cancelled" : skipped > 0 || items.contains { $0.status != "complete" } ? "partial" : "complete"
+        let known = items.compactMap(\.bytes)
+        let total = known.reduce(UInt64(0)) { sum, value in sum.addingReportingOverflow(value).overflow ? sum : sum + value }
+        return ExplorerResult(items: items, status: status, scannedAt: Date().timeIntervalSince1970,
+                              processedCount: processed, skippedCount: skipped, bytes: known.isEmpty ? nil : total)
+    }
+
+    func url(id: String) throws -> URL {
+        guard let (url, original) = inventory[id], !url.path.isEmpty,
+              approvedRoots.contains(where: { url.path == $0.path || url.path.hasPrefix($0.path + "/") }),
+              try stamp(url) == original,
+              url.resolvingSymlinksInPath().standardizedFileURL.path == url.path else { throw FileSafetyError.changed }
+        return url
+    }
+
+    private func stamp(_ url: URL) throws -> EntryStamp {
+        var value = stat()
+        guard url.withUnsafeFileSystemRepresentation({ $0.map { lstat($0, &value) } ?? -1 }) == 0 else { throw FileSafetyError.unreadable }
+        return EntryStamp(device: value.st_dev, inode: value.st_ino, kind: value.st_mode & S_IFMT,
+            bytes: value.st_size, modified: value.st_mtimespec.tv_sec, modifiedNanos: value.st_mtimespec.tv_nsec,
+            changed: value.st_ctimespec.tv_sec, changedNanos: value.st_ctimespec.tv_nsec)
+    }
+
+    private func measure(_ root: URL, device: dev_t, control: ScanControl, processed: inout Int,
+                         skipped: inout Int, progress: (Int) -> Void) -> (bytes: UInt64?, status: String) {
+        guard let initial = try? stamp(root) else { skipped += 1; return (nil, "unavailable") }
+        if control.cancelled { return (nil, "cancelled") }
+        guard manager.isReadableFile(atPath: root.path), (try? cloudOnly(root)) == false else {
+            skipped += 1; return (nil, "unavailable")
+        }
+        let processedBefore = processed
+        var localSkipped = 0
+        var changed = false
+        var bytes: UInt64 = 0
+        guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: nil, options: [],
+            errorHandler: { _, _ in localSkipped += 1; return !control.cancelled }) else {
+            skipped += 1; return (nil, "unavailable")
+        }
+        while let entry = enumerator.nextObject() as? URL {
+            if control.cancelled { skipped += localSkipped; return (bytes, "cancelled") }
+            processed += 1
+            if processed % 100 == 0 { progress(processed) }
+            do {
+                let metadata = try stamp(entry)
+                guard metadata.device == device else {
+                    if metadata.kind == S_IFDIR { enumerator.skipDescendants() }
+                    localSkipped += 1; continue
+                }
+                if metadata.kind == S_IFLNK { localSkipped += 1; continue }
+                if try cloudOnly(entry) {
+                    if metadata.kind == S_IFDIR { enumerator.skipDescendants() }
+                    localSkipped += 1; continue
+                }
+                if metadata.kind == S_IFREG {
+                    guard metadata.bytes >= 0 else { throw FileSafetyError.unreadable }
+                    let next = bytes.addingReportingOverflow(UInt64(metadata.bytes))
+                    guard !next.overflow else { throw FileSafetyError.unreadable }
+                    bytes = next.partialValue
+                } else if metadata.kind != S_IFDIR { throw FileSafetyError.unreadable }
+                if try stamp(entry) != metadata { changed = true }
+            } catch {
+                if (try? stamp(entry).kind) == S_IFDIR { enumerator.skipDescendants() }
+                localSkipped += 1
+            }
+        }
+        if (try? stamp(root)) != initial { changed = true }
+        skipped += localSkipped
+        progress(processed)
+        if processed == processedBefore && localSkipped > 0 { return (nil, "unavailable") }
+        return (bytes, changed ? "changed" : localSkipped > 0 ? "partial" : "complete")
+    }
+}
+
 private enum FileSafetyError: Error { case unreadable, changed }

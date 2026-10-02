@@ -391,7 +391,42 @@ private func runKeepTests() throws {
     print("PASS: persistent Keep exclusions, unchanged storage accounting, descendants, prefix siblings, reversal, and native stale-approval rejection; Trash mocked.")
 }
 
+private func runExplorerTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("explorer-rule/home")
+    let system = nativeTestRoot.appendingPathComponent("explorer-rule/system")
+    for name in ["Documents", "Desktop", "Movies", "Music", "Pictures", "Applications"] {
+        try testManager.createDirectory(at: home.appendingPathComponent(name), withIntermediateDirectories: true)
+    }
+    try testManager.createDirectory(at: system.appendingPathComponent("Applications"), withIntermediateDirectories: true)
+    _ = try writeFixture("Documents/inside/data", under: home)
+    _ = try writeFixture("Documents/Example.app/Contents/data", under: home)
+    _ = try writeFixture("Documents/cloud-only", under: home)
+    try testManager.createSymbolicLink(at: home.appendingPathComponent("Downloads"), withDestinationURL: home.appendingPathComponent("Documents/inside"))
+    let outside = try writeFixture("outside/private", under: nativeTestRoot)
+    try testManager.createSymbolicLink(at: home.appendingPathComponent("Desktop/link"), withDestinationURL: outside)
+    let locked = home.appendingPathComponent("Movies")
+    try testManager.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+    defer { try? testManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path) }
+    let explorer = StorageExplorer(home: home, systemRoot: system, cloudOnly: { $0.lastPathComponent == "cloud-only" })
+    let result = explorer.scan()
+    precondition(result.status == "partial")
+    precondition(result.items.count == 7 && result.items.allSatisfy { !$0.canClean })
+    let documents = result.items.first { $0.name == "Documents" }!
+    precondition(documents.bytes == 6 && documents.status == "partial")
+    precondition(result.items.first { $0.name == "Pictures" }!.bytes == 0)
+    precondition(result.items.first { $0.name == "Movies" }!.bytes == nil)
+    do { _ = try explorer.url(id: "unknown"); preconditionFailure("Unknown explorer ID accepted") } catch {}
+    for index in 0..<150 { _ = try writeFixture("Documents/batch/\(index)", under: home) }
+    let control = ScanControl()
+    let cancelled = explorer.scan(control: control, progress: { if $0 >= 100 { control.cancel() } })
+    precondition(cancelled.status == "cancelled" && cancelled.processedCount <= 100)
+    let cancelledBeforeStart = ScanControl(); cancelledBeforeStart.cancel()
+    precondition(explorer.scan(control: cancelledBeforeStart).status == "cancelled")
+    print("PASS: explorer fixed roots, redirected/nested deduplication, outside symlink and cloud skipping, package logical size, unreadable versus zero, cancellation, and no cleanup registration.")
+}
+
 try runScannerTests()
+try runExplorerTests()
 try runKeepTests()
 try runDownloadRuleTests()
 try runAppRemovalTests()
