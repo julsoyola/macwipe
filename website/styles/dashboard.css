@@ -49,7 +49,8 @@
   background: var(--nav-color);
   color: var(--ink);
   box-shadow: 1px 1px 0 var(--ink);
-  font-size: 14px;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: left;
 }
 .sidebar .question-row img {
   flex-shrink: 0;
@@ -75,7 +76,9 @@
 .sidebar [data-category="privacy"] {
   --nav-color: #f0dfe7;
 }
-.sidebar [aria-current="page"] {
+.sidebar .question-row[aria-current="page"] {
+  border: 2px solid var(--ink);
+  background: var(--nav-color);
   box-shadow: 3px 3px 0 var(--ink);
   font-weight: bold;
 }

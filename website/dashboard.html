@@ -9,11 +9,11 @@
     />
     <title>macwipe · Home · Demo</title>
     <link rel="stylesheet" href="styles/theme.css" />
-    <link rel="stylesheet" href="styles/dashboard.css" />
+    <link rel="stylesheet" href="styles/dashboard.css?v=task4-fix" />
     <script src="scripts/ui.js" defer></script>
     <script src="scripts/demo-data.js" defer></script>
     <script src="macwipe-bridge.js" defer></script>
-    <script src="scripts/dashboard.js" defer></script>
+    <script src="scripts/dashboard.js?v=task4-fix" defer></script>
   </head>
   <body class="dashboard-body">
     <a class="skip-link" href="#content-pane">Skip to content</a>
@@ -107,9 +107,9 @@
             tabindex="-1"
           >
             <header class="section-header">
-              <h1 id="dashboard-heading">Home</h1>
+              <h1 id="dashboard-heading">Your Mac, a little lighter.</h1>
               <p id="category-description">
-                Review storage and files on your Mac.
+                See your space. Choose what stays.
               </p>
             </header>
             <div id="home-view" class="home-panel">
@@ -140,7 +140,7 @@
                 Select all
               </button>
             </div>
-            <p class="preview-note">
+            <p class="preview-note" data-category-controls hidden>
               Example data only. No files are read or changed.
             </p>
             <noscript

@@ -130,22 +130,23 @@
 
   function switchCategory(key) {
     const isHome = key === "home";
-    if (key === currentCategory || (!isHome && !Object.hasOwn(categories, key)))
-      return;
+    if (!isHome && !Object.hasOwn(categories, key)) return;
     currentCategory = key;
     const category = isHome
-      ? { title: "Home", description: "Review storage and files on your Mac." }
+      ? { title: "Home", description: "See your space. Choose what stays." }
       : categories[key];
     const title = categoryTitles[key] || category.title;
     document.title = `macwipe · ${title} · ${isNative ? "Native" : "Demo"}`;
-    heading.textContent = title;
+    heading.textContent = isHome ? "Your Mac, a little lighter." : title;
     description.textContent = category.description;
     caption.textContent = `${title} items`;
     navButtons.forEach((button) => {
-      if ((button.dataset.view || button.dataset.category) === key)
-        button.setAttribute("aria-current", "page");
-      else button.removeAttribute("aria-current");
+      button.removeAttribute("aria-current");
     });
+    const activeButton = Array.from(navButtons).find(
+      (button) => (button.dataset.view || button.dataset.category) === key,
+    );
+    activeButton?.setAttribute("aria-current", "page");
     homeView.hidden = !isHome;
     categoryControls.forEach((control) => {
       control.hidden = isHome;
