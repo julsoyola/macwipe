@@ -2,6 +2,11 @@
   "use strict";
 
   // All values are fictional. This demo never reads files or changes settings.
+  window.MacwipeDemoExplorer = [
+    { id: "example-documents", name: "Documents", path: "/Example/Documents", bytes: 8_000_000_000 },
+    { id: "example-pictures", name: "Pictures", path: "/Example/Pictures", bytes: 5_000_000_000 },
+    { id: "example-downloads", name: "Downloads", path: "/Example/Downloads", bytes: 2_000_000_000 },
+  ];
   window.MacwipeDemoStorage = {
     volumeName: "Macintosh HD",
     totalBytes: 512_000_000_000,

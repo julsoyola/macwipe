@@ -43,6 +43,10 @@
 .native-mode .storage-ring-center strong { font-size: 20px; }
 .native-mode .storage-ring-center small { font-size: 13px; margin-top: 2px; }
 .native-mode .storage-summary { grid-column: 2; }
+.storage-actions { display: flex; align-items: flex-start; gap: 12px; }
+.storage-actions > details { min-width: 0; flex: 1; }
+.storage-actions > button { flex-shrink: 0; width: auto; }
+.native-mode .storage-actions > button { min-height: 28px; padding: 4px 8px; font-size: 13px; }
 .native-mode .storage-summary h3 { font-size: 18px; margin-bottom: 4px; }
 .native-mode .storage-summary p, .storage-disclosure { font-size: 13px; }
 .native-mode .storage-legend { margin-top: 6px; gap: 4px 12px; font-size: 13px; }

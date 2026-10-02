@@ -56,6 +56,15 @@
       ]));
 
   const { formatMB, createChat } = MacwipeUI;
+  categories.explorer = {
+    title: "Storage explorer", description: "Measured files — logical size. Read-only inventory.",
+    available: !isNative, bytes: isNative ? null : 15_000_000_000,
+    scannedAt: isNative ? null : Date.now() / 1000,
+    items: isNative ? [] : window.MacwipeDemoExplorer.map((item, originalScanIndex) => ({
+      ...item, ...itemMetadata({ kind: "storage-inventory", reviewClassification: "review-carefully" }),
+      originalScanIndex, mb: item.bytes / 1_000_000, canClean: false,
+    })),
+  };
   let allItems = uniqueItems(Object.values(categories).flatMap(
     (category) => category.items || [],
   ));
@@ -63,6 +72,7 @@
   const selected = new Set();
   const cachedRows = new Map();
   const categorySort = new Map();
+  categorySort.set("explorer", "descending");
   const checkboxById = new Map();
   let currentCategory = null;
   let detailsItem = null;
@@ -407,6 +417,7 @@
       "startup-file": "Startup configuration listed for review. Removing it may affect future launches and does not stop an already running service.",
       log: "Diagnostic information listed from a log location. Removing it may discard information useful for troubleshooting.",
       "browser-data": "Local browser data listed for review. Removing it may affect history, sessions, or sign-in state.",
+      "storage-inventory": "A file or folder listed by logical size. This inventory grants no cleanup permission. Inspect it in Finder before deciding what to keep.",
     };
     const explanation = (Object.hasOwn(explanations, item.kind) ? explanations[item.kind] : "")
       || (!isNative && item.details)
@@ -434,6 +445,10 @@
     if (!isHome && !Object.hasOwn(categories, key)) return;
     currentCategory = key;
     document.querySelector("#startup-settings").hidden = key !== "startup";
+    document.querySelector("#explorer-controls").hidden = key !== "explorer";
+    document.querySelector("#btn-preview-scan").hidden = key === "explorer";
+    document.querySelector("#explorer-status").textContent = categories.explorer.scannedAt
+      ? `${isNative ? "Measured" : "Demo examples · No files read"} · ${new Date(categories.explorer.scannedAt * 1000).toLocaleString()}` : "Not scanned.";
     document.body.dataset.currentView = key;
     document.querySelectorAll("[data-home-control]").forEach((control) => { control.hidden = !isHome; });
     const category = isHome
@@ -448,7 +463,7 @@
       button.removeAttribute("aria-current");
     });
     const activeButton = Array.from(navButtons).find(
-      (button) => (button.dataset.view || button.dataset.category) === key,
+      (button) => (button.dataset.view || button.dataset.category) === (key === "explorer" ? "home" : key),
     );
     activeButton?.setAttribute("aria-current", "page");
     homeView.hidden = !isHome;
@@ -484,7 +499,7 @@
     sortButton.setAttribute("aria-label", `Size / Info: ${sortLabel}. Activate to change order.`);
     sortButton.querySelector("span").textContent = sort === "descending" ? "▼"
       : sort === "ascending" ? "▲" : "";
-    const sections = [
+    const sections = key === "explorer" ? [["review-carefully", "Measured items", "Read-only inventory. Inspect personal files in Finder."]] : [
       ["temporary", "Temporary files", "Temporary data. Review before removing; apps may recreate it."],
       ["review-carefully", "Review carefully", "These items may contain important data or affect app behavior."],
     ];
@@ -583,6 +598,8 @@
   }
 
   const actions = {
+    "explore-storage": () => switchCategory("explorer"),
+    "back-home": () => switchCategory("home"),
     "keep-item": () => {
       if (!detailsItem) return;
       if (isNative) {
@@ -708,7 +725,7 @@
     detailsItem = item;
     document.querySelector("#btn-finder").hidden = false;
     const keep = document.querySelector("#btn-keep-item");
-    keep.hidden = false;
+    keep.hidden = item.kind === "storage-inventory";
     keep.textContent = item.kept ? "Allow recommendations again" : "Keep this";
     document.querySelector("#details-action-status").textContent = "";
     openDetails(`Tell me about ${item.name}.`, itemDetails(item));
@@ -755,6 +772,7 @@
       renderHomeStorage(payload.storage ?? null);
 
       for (const [key, category] of Object.entries(categories)) {
+        if (key === "explorer") continue;
         const source = payload.categories[key];
         category.available = !!source;
         category.error = source?.error;
