@@ -488,7 +488,8 @@
     const category = categories[key];
     const eligible = isNative ? category.eligibleBytes : category.items.filter((item) => item.canClean !== false)
       .reduce((sum, item) => sum + (item.bytes || 0), 0);
-    document.querySelector("#category-summary").textContent = `${inventorySummary(category)} · Eligible candidates: ${Number.isFinite(eligible) ? eligible === 0 ? "0 bytes" : formatMB(eligible / 1_000_000) : "Unavailable"}`;
+    document.querySelector("#category-summary").textContent = key === "explorer" ? inventorySummary(category)
+      : `${inventorySummary(category)} · Eligible candidates: ${Number.isFinite(eligible) ? eligible === 0 ? "0 bytes" : formatMB(eligible / 1_000_000) : "Unavailable"}`;
     const skipped = document.querySelector("#category-skipped");
     skipped.hidden = !(category.skippedPaths > 0);
     skipped.querySelector("ul").replaceChildren(...(category.skippedLocations || []).map((path) => {
@@ -780,7 +781,8 @@
     const bytes = isNative ? category.bytes : category.items.reduce((sum, item) => sum + (item.bytes || 0), 0);
     const amount = known ? bytes === 0 ? "0 bytes" : bytes < 1_000_000
       ? `${bytes.toLocaleString("en-US")} bytes` : formatMB(bytes / 1_000_000) : "Unavailable";
-    return `${!isNative ? "Example · " : ""}${category.skippedPaths > 0 || category.error ? "Partial · " : ""}Measured inventory: ${amount}`;
+    const label = category === categories.explorer ? "Measured files — logical size" : "Measured inventory";
+    return `${!isNative ? "Example · " : ""}${category.skippedPaths > 0 || category.error ? "Partial · " : ""}${label}: ${amount}`;
   }
   function showItemDetails(item) {
     detailsItem = item;
