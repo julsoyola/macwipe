@@ -30,6 +30,17 @@ for architecture in $ARCHITECTURES; do
 done
 lipo -create "$BUILD_DIR"/macwipe-* -output "$APP_DIR/Contents/MacOS/macwipe"
 cp "$NATIVE_DIR/Info.plist" "$APP_DIR/Contents/Info.plist"
+ICONSET_DIR="$BUILD_DIR/macwipe.iconset"
+mkdir -p "$ICONSET_DIR"
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" "$NATIVE_DIR/Assets/macwipe-icon.png" \
+    --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null
+  double_size=$((size * 2))
+  sips -z "$double_size" "$double_size" "$NATIVE_DIR/Assets/macwipe-icon.png" \
+    --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET_DIR" -o "$APP_DIR/Contents/Resources/macwipe.icns"
+cp "$NATIVE_DIR/Assets/macwipe-icon.png" "$APP_DIR/Contents/Resources/macwipe-icon.png"
 # Only generated web resources are synchronized; release ZIPs stay outside.
 rsync -a --delete --delete-excluded \
   --exclude '/downloads/' --exclude '/.vercel/' --exclude '.DS_Store' \

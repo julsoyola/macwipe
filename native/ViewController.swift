@@ -9,6 +9,8 @@ import Darwin
 @MainActor
 final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHandler {
     private var webView: WKWebView?
+    private var launchView: NSView?
+    private var launchLabel: NSTextField?
     private var dashboardURL: URL?
     private var busy = false
     private var pageGeneration = 0
@@ -17,6 +19,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 960, height: 640))
+        showLaunchState("Opening macwipe…")
     }
 
     override func viewDidLoad() {
@@ -30,7 +33,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
         let browser = WKWebView(frame: view.bounds, configuration: configuration)
         browser.autoresizingMask = [.width, .height]
         browser.navigationDelegate = self
-        view.addSubview(browser)
+        view.addSubview(browser, positioned: .below, relativeTo: launchView)
         webView = browser
         loadDashboard()
     }
@@ -59,16 +62,49 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
             return
         }
-        webView.loadHTMLString("<body style='background:#1a1a1a;color:#fff;font-family:sans-serif;padding:20px;'>Missing Web/dashboard.html or Web/macwipe-bridge.js in the app bundle.</body>", baseURL: nil)
+        showLaunchState("Couldn’t open macwipe. The dashboard is missing.")
     }
 
-    private func showSetupError() {
-        let label = NSTextField(wrappingLabelWithString:
-            "Missing dashboard.html in bundled Web/, app resources, or the working directory's Web/."
+    private func showLaunchState(_ message: String) {
+        if let launchView {
+            launchLabel?.stringValue = message
+            launchView.isHidden = false
+            return
+        }
+        let panel = NSView(frame: view.bounds)
+        panel.autoresizingMask = [.width, .height]
+        panel.wantsLayer = true
+        panel.layer?.backgroundColor = NSColor(
+            calibratedRed: 1, green: 247 / 255, blue: 237 / 255, alpha: 1
+        ).cgColor
+        let logo = NSImageView()
+        if let url = Bundle.main.url(forResource: "macwipe-icon", withExtension: "png") {
+            logo.image = NSImage(contentsOf: url)
+        }
+        logo.imageScaling = .scaleProportionallyUpOrDown
+        logo.setAccessibilityLabel("macwipe")
+        let label = NSTextField(wrappingLabelWithString: message)
+        label.font = .systemFont(ofSize: 18, weight: .medium)
+        label.textColor = NSColor(
+            calibratedRed: 80 / 255, green: 45 / 255, blue: 67 / 255, alpha: 1
         )
-        label.frame = view.bounds.insetBy(dx: 24, dy: 24)
-        label.autoresizingMask = [.width, .height]
-        view.addSubview(label)
+        label.alignment = .center
+        let stack = NSStackView(views: [logo, label])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        panel.addSubview(stack)
+        view.addSubview(panel)
+        NSLayoutConstraint.activate([
+            logo.widthAnchor.constraint(equalToConstant: 128),
+            logo.heightAnchor.constraint(equalToConstant: 128),
+            stack.centerXAnchor.constraint(equalTo: panel.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: panel.centerYAnchor),
+            stack.widthAnchor.constraint(lessThanOrEqualTo: panel.widthAnchor, constant: -32)
+        ])
+        launchView = panel
+        launchLabel = label
     }
 
     private func isDashboard(_ url: URL?) -> Bool {
@@ -85,10 +121,25 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         pageGeneration += 1
+        showLaunchState("Opening macwipe…")
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // dashboard.js requests the initial scan after registering callbacks.
+        if isDashboard(webView.url) { launchView?.isHidden = true }
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+                 withError error: Error) {
+        showLaunchState("Couldn’t open macwipe. Please reopen the app.")
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        showLaunchState("Couldn’t open macwipe. Please reopen the app.")
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        showLaunchState("macwipe’s dashboard stopped. Please reopen the app.")
     }
 
     func userContentController(_ userContentController: WKUserContentController,

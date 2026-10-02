@@ -8,6 +8,8 @@
     <string>app.macwipe.native</string>
     <key>CFBundleName</key>
     <string>macwipe</string>
+    <key>CFBundleIconFile</key>
+    <string>macwipe.icns</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
