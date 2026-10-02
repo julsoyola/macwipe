@@ -319,6 +319,19 @@
 .dashboard-body [data-message="answer"] {
   white-space: pre-line;
 }
+.item-list .risk-section td {
+  text-align: left;
+  white-space: normal;
+  background: var(--panel);
+}
+.risk-section h2 {
+  margin: 0 0 4px;
+  font: bold 16px var(--serif);
+}
+.risk-section p {
+  margin: 0;
+  font-size: 12px;
+}
 .item-list th:first-child,
 .item-list td:first-child {
   width: 76px;

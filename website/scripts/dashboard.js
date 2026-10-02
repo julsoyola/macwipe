@@ -380,11 +380,38 @@
       return;
     }
 
-    if (!cachedRows.has(key))
-      cachedRows.set(key, (category.items || []).map(createRow));
+    renderCategoryList(key);
+  }
 
+  function renderCategoryList(key) {
+    const category = categories[key];
+    if (!cachedRows.has(key)) cachedRows.set(key, new Map());
+    const rows = cachedRows.get(key);
+    const items = [...new Map((category.items || []).map((item) => [item.id, item])).values()];
     const fragment = document.createDocumentFragment();
-    fragment.append(...cachedRows.get(key));
+    const sections = [
+      ["temporary", "Temporary files", "Temporary data. Review before removing; apps may recreate it."],
+      ["review-carefully", "Review carefully", "These items may contain important data or affect app behavior."],
+    ];
+    for (const [classification, title, explanation] of sections) {
+      const sectionItems = items.filter((item) => item.reviewClassification === classification);
+      if (!sectionItems.length) continue;
+      const section = document.createElement("tr");
+      section.className = "risk-section";
+      const cell = document.createElement("td");
+      cell.colSpan = 4;
+      const heading = document.createElement("h2");
+      heading.textContent = title;
+      const note = document.createElement("p");
+      note.textContent = explanation;
+      cell.append(heading, note);
+      section.append(cell);
+      fragment.append(section);
+      for (const item of sectionItems) {
+        if (!rows.has(item.id)) rows.set(item.id, createRow(item));
+        fragment.append(rows.get(item.id));
+      }
+    }
     if (isNative && !category.items.length) {
       const row = document.createElement("tr");
       const cell = document.createElement("td");
@@ -404,6 +431,7 @@
     const cat = categories[currentCategory];
     return (cat?.items || []).filter(
       (item) => item.canClean !== false && item.bulkSelectionEligible
+        && item.reviewClassification === "temporary"
         && item.kind !== "unmatched-support",
     );
   }
