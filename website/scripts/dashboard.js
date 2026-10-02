@@ -203,7 +203,8 @@
     });
     scanUpdated.hidden = !completed;
     if (completed) {
-      const now = new Date();
+      const now = isNative && categories[currentCategory]?.scannedAt
+        ? new Date(categories[currentCategory].scannedAt * 1000) : new Date();
       scanUpdatedTime.dateTime = now.toISOString();
       scanUpdatedTime.textContent = now.toLocaleTimeString([], {
         hour: "numeric",
@@ -482,6 +483,16 @@
     }
 
     renderCategoryList(key);
+    if (isNative && key !== "explorer" && !category.available && !window.macwipeUI.isBusy) {
+      queueMicrotask(() => {
+        if (currentCategory === key && !category.available && !window.macwipeUI.isBusy) window.macwipeUI.scan([key]);
+      });
+    }
+    if (isNative && category.scannedAt) {
+      scanUpdated.hidden = false;
+      scanUpdatedTime.dateTime = new Date(category.scannedAt * 1000).toISOString();
+      scanUpdatedTime.textContent = new Date(category.scannedAt * 1000).toLocaleTimeString();
+    }
   }
 
   function renderCategoryList(key) {
@@ -670,7 +681,7 @@
     preview: () => {
       if (isNative) {
         previewNote.textContent = "Scanning local files...";
-        window.macwipeUI.scan();
+        window.macwipeUI.scan(currentCategory === "home" ? undefined : [currentCategory]);
       } else refreshDemo();
     },
     "select-all": selectAll,
@@ -812,8 +823,8 @@
     const receiveScanData = nativeUI.receiveScanData;
     const onCleanupComplete = nativeUI.onCleanupComplete;
 
-    nativeUI.scan = function () {
-      const started = scan.call(this);
+    nativeUI.scan = function (scope) {
+      const started = scan.call(this, scope);
       if (started !== false) {
         setScanState("loading", "Native · Scanning local files…");
       }
@@ -837,6 +848,8 @@
       for (const [key, category] of Object.entries(categories)) {
         if (key === "explorer") continue;
         const source = payload.categories[key];
+        if (!source) continue;
+        if (payload.refreshed && !payload.refreshed.includes(key)) continue;
         category.available = !!source;
         category.error = source?.error;
         category.skippedPaths = source?.skippedPaths || 0;
@@ -878,7 +891,11 @@
         if (current) showItemDetails(current);
         else document.querySelector("#details-dialog").close();
       }
-      selected.clear();
+      const refreshed = new Set(payload.refreshed || Object.keys(payload.categories));
+      for (const id of selected) {
+        const item = itemById.get(id);
+        if (!item || refreshed.has(item.category)) selected.delete(id);
+      }
       selectedMB = 0;
       cachedRows.clear();
       checkboxById.clear();
@@ -892,8 +909,7 @@
         (sum, category) => sum + (category.skippedPaths || 0), 0,
       );
       const incomplete = scanned.some((category) => category.error) || skipped > 0
-        || Object.values(categories).some((category) => !category.available
-          || category.items.some((item) => item.bytes === null));
+        || scanned.some((category) => category.items.some((item) => !Number.isFinite(item.bytes)));
       const hasItems = scanned.some((category) =>
         category.items.some((item) => item.canClean === true),
       );

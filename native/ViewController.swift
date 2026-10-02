@@ -167,7 +167,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
             fileQueue.async { [weak self] in
                 do {
                     try worker.setKept(id: id, kept: kept)
-                    let result = worker.scan()
+                    let result = worker.scan(scope: worker.completedScope)
                     DispatchQueue.main.async { [weak self] in
                         self?.busy = false
                         self?.send("receiveScanData", result)
@@ -206,7 +206,19 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
                 : login ? "Open System Settings → General → Login Items."
                 : "Open System Settings → General → Storage."))
         case "requestScan":
-            requestScan()
+            let scope: [Category]
+            if let values = body["scope"] as? [String] {
+                let parsed = values.compactMap(Category.init(rawValue:))
+                guard body.count == 2, !parsed.isEmpty, parsed.count == values.count,
+                      Set(parsed).count == parsed.count else {
+                    send("onNativeError", BridgeError(action: action, message: "Invalid scan category scope.")); return
+                }
+                scope = parsed
+            } else {
+                guard body.count == 1 else { return }
+                scope = [.downloads, .caches]
+            }
+            requestScan(scope: scope)
         case "removeApplication":
             guard body.count == 1 else {
                 send("onNativeError", BridgeError(action: action, message: "Invalid application removal request."))
@@ -253,12 +265,12 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
         }
     }
 
-    private func requestScan() {
+    private func requestScan(scope: [Category] = [.downloads, .caches]) {
         busy = true
         let generation = pageGeneration
         let worker = worker
         fileQueue.async { [weak self] in
-            let result = worker.scan()
+            let result = worker.scan(scope: scope)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.busy = false
@@ -302,7 +314,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
                         completionHandler: nil
                     )
                 }
-                if self.isDashboard(self.webView?.url) { self.requestScan() }
+                if self.isDashboard(self.webView?.url) { self.requestScan(scope: selections.compactMap { Category(rawValue: $0.id) }) }
             }
         }
     }
@@ -428,6 +440,7 @@ private struct VolumeStorage: Encodable, Sendable {
 private struct ScanData: Encodable, Sendable {
     let categories: [String: CategoryScan]
     let storage: VolumeStorage?
+    let refreshed: [String]
     let staleDownloadDays = 30
     let sizeMeaning = "Logical file bytes; not allocated or reclaimable disk space."
 }
@@ -448,6 +461,8 @@ private final class FileWorker: @unchecked Sendable {
     private let runningApplicationURL: URL
     private var approved: [Category: [String: ApprovedItem]] = [:]
     private var inventory: [String: ApprovedItem] = [:]
+    private var completed: [String: CategoryScan] = [:]
+    var completedScope: [Category] { Category.allCases.filter { completed[$0.rawValue] != nil } }
     private let preferences: UserDefaults?
     private var keptPaths: Set<String>
     private let staleAge: TimeInterval = 30 * 24 * 60 * 60
@@ -473,11 +488,11 @@ private final class FileWorker: @unchecked Sendable {
             .filter { $0.hasPrefix("/") }.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
     }
 
-    func scan(now: Date = Date()) -> ScanData {
-        approved.removeAll()
-        inventory.removeAll()
-        var results: [String: CategoryScan] = [:]
-        let applications = roots(for: .applications).prefix(2).flatMap { applicationURLs(in: $0) }
+    func scan(now: Date = Date(), scope: [Category] = Category.allCases) -> ScanData {
+        for category in scope { approved.removeValue(forKey: category) }
+        inventory = inventory.filter { !scope.contains($0.value.category) }
+        var results = completed
+        let applications = scope.contains(.applications) ? roots(for: .applications).prefix(2).flatMap { applicationURLs(in: $0) } : []
         var installedNames = Set<String>()
         for app in applications {
             installedNames.insert(app.deletingPathExtension().lastPathComponent.lowercased())
@@ -493,7 +508,7 @@ private final class FileWorker: @unchecked Sendable {
                 }
             }
         }
-        for category in Category.allCases {
+        for category in scope {
             var result = CategoryScan()
             for root in roots(for: category) {
                 // Invalid or inaccessible roots never disable other roots/items.
@@ -547,7 +562,8 @@ private final class FileWorker: @unchecked Sendable {
         storage.eligibleFormatted = format(storage.eligibleBytes)
         storage.canClean = storage.items.contains { $0.canClean }
         results["storage"] = storage
-        return ScanData(categories: results, storage: volumeStorage())
+        completed = results
+        return ScanData(categories: results, storage: volumeStorage(), refreshed: scope.map(\.rawValue) + ["storage"])
     }
 
     private func volumeStorage() -> VolumeStorage? {
@@ -719,7 +735,9 @@ private final class FileWorker: @unchecked Sendable {
         var result = CleanupResult()
         // Consume the approval once, including failed attempts.
         let snapshot = approved
-        approved.removeAll()
+        for selection in selections {
+            if let category = Category(rawValue: selection.id) { approved.removeValue(forKey: category) }
+        }
         var targets: [ApprovedItem] = []
         var selectedPaths = Set<String>()
         for selection in selections {

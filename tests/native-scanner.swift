@@ -439,7 +439,30 @@ private func runExplorerTests() throws {
     print("PASS: explorer fixed roots, redirected/nested deduplication, outside symlink and cloud skipping, package logical size, unreadable versus zero, cancellation, and no cleanup registration.")
 }
 
+private func runScopedScanTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("scoped-rule/home")
+    _ = try writeFixture("Library/Caches/pip/wheels/wheel", under: home)
+    let download = try writeFixture("Downloads/older.zip", under: home)
+    try testManager.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -31 * 86400)], ofItemAtPath: download.path)
+    var moved: [String] = []
+    let worker = FileWorker(home: home, systemRoot: nativeTestSystem, trashItem: { moved.append($0.path) })
+    let first = worker.scan(scope: [.downloads, .caches])
+    precondition(Set(first.categories.keys) == ["downloads", "caches", "storage"])
+    let cache = first.categories["caches"]!.items[0]
+    let cacheTime = first.categories["caches"]!.scannedAt
+    let scoped = worker.scan(scope: [.downloads])
+    precondition(scoped.categories["caches"]!.scannedAt == cacheTime)
+    precondition(Set(scoped.refreshed) == ["downloads", "storage"])
+    let keptApproval = worker.cleanup(try selections([("caches", [cache.path])]))
+    precondition(keptApproval.errors.isEmpty && keptApproval.movedCount == 1)
+    let downloadItem = scoped.categories["downloads"]!.items[0]
+    let unrelatedApproval = worker.cleanup(try selections([("downloads", [downloadItem.path])]))
+    precondition(unrelatedApproval.errors.isEmpty && unrelatedApproval.movedCount == 1 && moved.count == 2)
+    print("PASS: initial recommendation scope, retained unrelated results/timestamps/approvals, scoped refresh, and scoped approval consumption; Trash mocked.")
+}
+
 try runScannerTests()
+try runScopedScanTests()
 try runExplorerTests()
 try runKeepTests()
 try runDownloadRuleTests()

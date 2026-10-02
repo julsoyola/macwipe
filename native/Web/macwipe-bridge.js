@@ -100,8 +100,8 @@
       return post("removeApplication");
     },
 
-    scan() {
-      return post("requestScan");
+    scan(scope) {
+      return post("requestScan", scope ? { scope } : {});
     },
 
     showInFinder(id) { return post("showInFinder", { id }); },
@@ -151,6 +151,7 @@
           element.textContent = category.eligibleFormatted;
         });
         // A fresh scan requires a fresh selection; stale paths are never retained.
+        if (payload.refreshed && !payload.refreshed.includes(id)) continue;
         document.querySelectorAll(`input[type="checkbox"][data-category="${id}"]`)
           .forEach((checkbox) => {
             checkbox.checked = false;
