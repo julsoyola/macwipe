@@ -134,6 +134,15 @@
   function renderHomeStorage(storage) {
     const overview = document.querySelector("#storage-overview");
     const unavailable = document.querySelector("#storage-unavailable");
+    document.querySelector("#storage-size-note").hidden = !isNative;
+    if (storage && (
+      !Number.isFinite(storage.totalBytes) || storage.totalBytes <= 0 ||
+      !Number.isFinite(storage.availableBytes) || storage.availableBytes < 0 ||
+      storage.availableBytes > storage.totalBytes ||
+      typeof storage.volumeName !== "string" || !storage.volumeName.trim()
+    )) {
+      storage = null;
+    }
     overview.hidden = !storage;
     unavailable.hidden = !!storage;
     if (!storage) return;
@@ -160,7 +169,9 @@
       `${formatGB(usedBytes)} used / ${formatGB(totalBytes)} total`;
 
     const segments = [
-      ...storage.segments,
+      ...(isNative
+        ? [{ label: "Used", bytes: usedBytes, color: "#a4527b" }]
+        : storage.segments),
       { label: "Available", bytes: availableBytes, color: "#eadfe3" },
     ];
     const rings = document.createDocumentFragment();
@@ -465,6 +476,7 @@
 
     nativeUI.receiveScanData = function (payload) {
       if (receiveScanData) receiveScanData.call(this, payload);
+      renderHomeStorage(payload.storage ?? null);
 
       for (const [key, category] of Object.entries(categories)) {
         category.items = (payload.categories[key]?.items || []).map((file) => ({

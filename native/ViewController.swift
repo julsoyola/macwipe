@@ -234,8 +234,15 @@ private struct CategoryScan: Encodable, Sendable {
     var error: String?
 }
 
+private struct VolumeStorage: Encodable, Sendable {
+    let volumeName: String
+    let totalBytes: UInt64
+    let availableBytes: UInt64
+}
+
 private struct ScanData: Encodable, Sendable {
     let categories: [String: CategoryScan]
+    let storage: VolumeStorage?
     let staleDownloadDays = 90
     let sizeMeaning = "Logical file bytes; not allocated or reclaimable disk space."
 }
@@ -331,7 +338,20 @@ private final class FileWorker: @unchecked Sendable {
         storage.eligibleFormatted = format(storage.eligibleBytes)
         storage.canClean = !storage.items.isEmpty
         results["storage"] = storage
-        return ScanData(categories: results)
+        return ScanData(categories: results, storage: volumeStorage())
+    }
+
+    private func volumeStorage() -> VolumeStorage? {
+        // A fresh URL avoids reusing capacity values cached by a prior scan.
+        let location = URL(fileURLWithPath: home.path, isDirectory: true)
+        guard let values = try? location.resourceValues(forKeys: [
+            .volumeNameKey, .volumeTotalCapacityKey, .volumeAvailableCapacityKey
+        ]), let name = values.volumeName, !name.isEmpty,
+           let total = values.volumeTotalCapacity, total > 0,
+           let available = values.volumeAvailableCapacity,
+           available >= 0, available <= total else { return nil }
+        return VolumeStorage(volumeName: name, totalBytes: UInt64(total),
+                             availableBytes: UInt64(available))
     }
 
     private func roots(for category: Category) -> [URL] {

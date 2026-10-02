@@ -74,6 +74,18 @@ private func runScannerTests() throws {
     precondition(!scan.categories["privacy"]!.items.contains { $0.name.contains("Bookmarks") })
     precondition(scan.categories["trash"]!.items.isEmpty)
     let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(scan)) as! [String: Any]
+    let volume = try nativeTestHome.resourceValues(forKeys: [.volumeNameKey, .volumeTotalCapacityKey])
+    let capacity = scan.storage!
+    precondition(capacity.volumeName == volume.volumeName)
+    precondition(capacity.totalBytes == UInt64(volume.volumeTotalCapacity!))
+    precondition(capacity.availableBytes <= capacity.totalBytes)
+    let encodedStorage = encoded["storage"] as! [String: Any]
+    precondition(["volumeName", "totalBytes", "availableBytes"].allSatisfy { encodedStorage[$0] != nil })
+    precondition(encodedStorage["segments"] == nil)
+    let missingHome = nativeTestRoot.appendingPathComponent("missing-home")
+    let missingScan = FileWorker(home: missingHome, systemRoot: nativeTestSystem,
+                                 trashItem: { _ in }).scan()
+    precondition(missingScan.storage == nil)
     let categories = encoded["categories"] as! [String: [String: Any]]
     let item = (categories["applications"]!["items"] as! [[String: Any]])[0]
     precondition(["id", "category", "path", "name", "bytes", "formatted", "canClean"].allSatisfy { item[$0] != nil })

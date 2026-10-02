@@ -9,11 +9,11 @@
     />
     <title>macwipe · Home · Demo</title>
     <link rel="stylesheet" href="styles/theme.css" />
-    <link rel="stylesheet" href="styles/dashboard.css?v=task7" />
+    <link rel="stylesheet" href="styles/dashboard.css?v=task8" />
     <script src="scripts/ui.js" defer></script>
     <script src="scripts/demo-data.js?v=task6" defer></script>
     <script src="macwipe-bridge.js" defer></script>
-    <script src="scripts/dashboard.js?v=task7" defer></script>
+    <script src="scripts/dashboard.js?v=task8" defer></script>
   </head>
   <body class="dashboard-body">
     <a class="skip-link" href="#content-pane">Skip to content</a>
@@ -138,6 +138,10 @@
                     <h3 id="storage-volume"></h3>
                     <p id="storage-usage"></p>
                     <ul id="storage-legend" class="storage-legend"></ul>
+                    <p id="storage-size-note" hidden>
+                      Available space is reported by macOS. Cleanup candidates
+                      use logical file sizes, not guaranteed space freed.
+                    </p>
                   </div>
                 </div>
               </section>
