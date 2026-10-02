@@ -9,11 +9,11 @@
     />
     <title>macwipe · Home · Demo</title>
     <link rel="stylesheet" href="styles/theme.css" />
-    <link rel="stylesheet" href="styles/dashboard.css?v=task4-fix" />
+    <link rel="stylesheet" href="styles/dashboard.css?v=task5" />
     <script src="scripts/ui.js" defer></script>
-    <script src="scripts/demo-data.js" defer></script>
+    <script src="scripts/demo-data.js?v=task5" defer></script>
     <script src="macwipe-bridge.js" defer></script>
-    <script src="scripts/dashboard.js?v=task4-fix" defer></script>
+    <script src="scripts/dashboard.js?v=task5" defer></script>
   </head>
   <body class="dashboard-body">
     <a class="skip-link" href="#content-pane">Skip to content</a>
@@ -114,7 +114,31 @@
             </header>
             <div id="home-view" class="home-panel">
               <h2>Storage overview</h2>
-              <p>Storage overview is not available yet.</p>
+              <p id="storage-unavailable">
+                Storage overview is not available yet.
+              </p>
+              <div id="storage-overview" class="storage-overview" hidden>
+                <div class="storage-ring">
+                  <svg
+                    id="storage-chart"
+                    width="180"
+                    height="180"
+                    viewBox="0 0 180 180"
+                    role="img"
+                    aria-label="Storage capacity and usage"
+                  ></svg>
+                  <div class="storage-ring-center" aria-hidden="true">
+                    <strong id="storage-available"></strong>
+                    <span>available</span>
+                    <small id="storage-percent"></small>
+                  </div>
+                </div>
+                <div class="storage-summary">
+                  <h3 id="storage-volume"></h3>
+                  <p id="storage-usage"></p>
+                  <ul id="storage-legend" class="storage-legend"></ul>
+                </div>
+              </div>
             </div>
             <div
               class="toolbar"

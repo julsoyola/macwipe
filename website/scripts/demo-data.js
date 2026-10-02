@@ -2,6 +2,19 @@
   "use strict";
 
   // All values are fictional. This demo never reads files or changes settings.
+  window.MacwipeDemoStorage = {
+    volumeName: "Macintosh HD",
+    totalBytes: 512_000_000_000,
+    availableBytes: 128_000_000_000,
+    segments: [
+      { label: "Apps", bytes: 96_000_000_000, color: "#a4527b" },
+      { label: "Documents", bytes: 160_000_000_000, color: "#b7a0c3" },
+      { label: "Downloads", bytes: 24_000_000_000, color: "#c6a05b" },
+      { label: "Caches", bytes: 8_000_000_000, color: "#82966e" },
+      { label: "Other", bytes: 96_000_000_000, color: "#9e8893" },
+    ],
+  };
+
   window.MacwipeData = {
     storage: {
       title: "Storage",

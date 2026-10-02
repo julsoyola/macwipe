@@ -56,6 +56,75 @@
   const confirmButton = document.querySelector("#review-simulate-btn");
   const openDetails = createChat(document.querySelector("#details-dialog"));
 
+  function renderHomeStorage(storage) {
+    const overview = document.querySelector("#storage-overview");
+    const unavailable = document.querySelector("#storage-unavailable");
+    overview.hidden = !storage;
+    unavailable.hidden = !!storage;
+    if (!storage) return;
+
+    const { totalBytes, availableBytes, volumeName } = storage;
+    const usedBytes = totalBytes - availableBytes;
+    const numberFormat = new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 1,
+    });
+    const formatGB = (bytes) =>
+      `${numberFormat.format(bytes / 1_000_000_000)} GB`;
+    const percent = Math.round((availableBytes / totalBytes) * 100);
+    const chart = document.querySelector("#storage-chart");
+    chart.setAttribute(
+      "aria-label",
+      `${volumeName}: ${formatGB(usedBytes)} used of ${formatGB(totalBytes)} total; ${formatGB(availableBytes)} available, ${percent}% of your disk.`,
+    );
+    document.querySelector("#storage-available").textContent =
+      formatGB(availableBytes);
+    document.querySelector("#storage-percent").textContent =
+      `${percent}% of your disk`;
+    document.querySelector("#storage-volume").textContent = volumeName;
+    document.querySelector("#storage-usage").textContent =
+      `${formatGB(usedBytes)} used / ${formatGB(totalBytes)} total`;
+
+    const segments = [
+      ...storage.segments,
+      { label: "Available", bytes: availableBytes, color: "#eadfe3" },
+    ];
+    const rings = document.createDocumentFragment();
+    const legend = document.createDocumentFragment();
+    let offset = 0;
+    segments.forEach((segment) => {
+      const share = (segment.bytes / totalBytes) * 100;
+      const arc = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      for (const [name, value] of Object.entries({
+        cx: 90,
+        cy: 90,
+        r: 80.5,
+        fill: "none",
+        stroke: segment.color,
+        "stroke-width": 19,
+        pathLength: 100,
+        "stroke-dasharray": `${share} ${100 - share}`,
+        "stroke-dashoffset": -offset,
+        transform: "rotate(-90 90 90)",
+      })) {
+        arc.setAttribute(name, value);
+      }
+      rings.append(arc);
+      offset += share;
+
+      const entry = document.createElement("li");
+      const swatch = document.createElement("span");
+      swatch.className = "storage-swatch";
+      swatch.style.backgroundColor = segment.color;
+      swatch.setAttribute("aria-hidden", "true");
+      const label = document.createElement("span");
+      label.textContent = `${segment.label} · ${formatGB(segment.bytes)}`;
+      entry.append(swatch, label);
+      legend.append(entry);
+    });
+    chart.replaceChildren(rings);
+    document.querySelector("#storage-legend").replaceChildren(legend);
+  }
+
   function updateSelection() {
     const count = selected.size;
     const summary = `Selected: ${count} ${count === 1 ? "item" : "items"} · ${formatMB(selectedMB)}`;
@@ -340,6 +409,7 @@
     });
   }
 
+  renderHomeStorage(isNative ? null : window.MacwipeDemoStorage);
   switchCategory("home");
   if (isNative && window.macwipeUI?.scan) window.macwipeUI.scan();
 })();

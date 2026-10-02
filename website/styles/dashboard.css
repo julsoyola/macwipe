@@ -101,6 +101,70 @@
 .home-panel p {
   margin: 0;
 }
+.storage-overview {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.storage-ring {
+  position: relative;
+  flex: 0 0 180px;
+  width: 180px;
+  height: 180px;
+}
+.storage-ring svg {
+  display: block;
+  shape-rendering: geometricPrecision;
+}
+.storage-ring-center {
+  position: absolute;
+  top: 19px;
+  left: 19px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 142px;
+  height: 142px;
+  border-radius: 50%;
+  background: var(--panel);
+  font-size: 14px;
+}
+.storage-ring-center strong {
+  font: bold 26px/1.25 var(--serif);
+}
+.storage-ring-center small {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.storage-summary {
+  flex: 1;
+  min-width: 0;
+}
+.storage-summary h3 {
+  margin: 0 0 8px;
+  font: bold 21px/1.25 var(--serif);
+}
+.storage-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.storage-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.storage-swatch {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--ink);
+}
 .dashboard-body .status-strip {
   font: 12px/1.5 var(--mono);
 }
@@ -274,6 +338,14 @@
   }
   .content-pane {
     padding: 28px 16px;
+  }
+  .storage-overview {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+  }
+  .storage-ring {
+    align-self: center;
   }
   /* Ensure all table checkboxes are fully interactive and never greyed out unless explicitly disabled */
 #item-table-body input[type="checkbox"] {
