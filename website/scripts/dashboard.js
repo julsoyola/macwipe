@@ -26,6 +26,7 @@
   const checkboxById = new Map();
   let currentCategory = null;
   let selectedMB = 0;
+  let hasCompletedScan = false;
 
   // Resolve persistent DOM nodes once; event handlers reuse these references.
   const tableBody = document.querySelector("#item-table-body");
@@ -98,6 +99,10 @@
       button.disabled = state === "loading";
     });
     const completed = state === "ready" || state === "empty";
+    if (completed) hasCompletedScan = true;
+    scanButtons.forEach((button) => {
+      button.textContent = hasCompletedScan ? "Rescan" : "Scan";
+    });
     scanUpdated.hidden = !completed;
     if (completed) {
       const now = new Date();
@@ -333,7 +338,7 @@
         "Selected files will be moved to Trash. Applications and support folders may contain personal data. Removing startup files does not stop running services. Close affected apps and browsers first.";
       confirmButton.hidden = false;
       confirmButton.style.display = "";
-      confirmButton.textContent = "Clean Selected";
+      confirmButton.textContent = "Move to Trash";
     }
     const items = allItems.filter((item) => selected.has(item.id));
     const fragment = document.createDocumentFragment();
@@ -420,6 +425,7 @@
 
     const nativeUI = window.macwipeUI;
     const scan = nativeUI.scan;
+    const deleteFiles = nativeUI.delete;
     const receiveScanData = nativeUI.receiveScanData;
     const onCleanupComplete = nativeUI.onCleanupComplete;
 
@@ -430,7 +436,15 @@
       }
       return started;
     };
+    nativeUI.delete = function (...args) {
+      const started = deleteFiles.apply(this, args);
+      if (started !== false) {
+        setScanState("loading", "Native · Moving selected files to Trash…");
+      }
+      return started;
+    };
     window.addEventListener("macwipe:scan", (event) => {
+      hasCompletedScan = true;
       const scanned = Object.values(event.detail.categories);
       const incomplete = scanned.some((category) => category.error);
       const hasItems = scanned.some((category) =>

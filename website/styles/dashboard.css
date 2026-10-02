@@ -253,6 +253,11 @@
 .dialog-actions .question-row {
   width: auto;
   justify-content: center;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-width: 1px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 14px;
 }
 .preview-note {
   margin: 16px 0 20px;
@@ -270,29 +275,33 @@
   padding: 4px;
   justify-content: center;
   font-size: 12px;
+  border-width: 1px;
+  box-shadow: 2px 2px 0 var(--ink);
 }
 .table-scroll {
   max-height: 420px;
   overflow: auto;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 2px 2px 0 var(--status);
 }
 .item-list {
   width: 100%;
   min-width: 440px;
   border-collapse: collapse;
   text-align: left;
-  font-size: 12px;
-  line-height: 1.25;
+  font-size: 14px;
+  line-height: 1.5;
 }
 .item-list caption {
-  padding: 10px 0;
-  border-top: 2px solid var(--ink);
-  font: bold 17px var(--serif);
+  padding: 14px;
+  font: bold 21px var(--serif);
   text-align: left;
 }
 .item-list th,
 .item-list td {
-  padding: 6px 8px;
-  border-bottom: 2px solid var(--ink);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ink);
   overflow-wrap: anywhere;
 }
 .item-list thead {
@@ -324,14 +333,19 @@
 .item-list .question-row {
   white-space: nowrap;
   width: auto;
-  min-height: 26px;
-  padding: 3px 6px;
-  font-size: 12px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border-width: 1px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 14px;
 }
 .bottom-bar {
   justify-content: space-between;
   padding-top: 20px;
-  font-size: 12px;
+  font-size: 14px;
+}
+#selection-status {
+  font: 12px/1.5 var(--mono);
 }
 .dialog-body {
   padding: 20px;
