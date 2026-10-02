@@ -298,13 +298,13 @@
     reviewButton.disabled = count === 0;
     const selectableItems = bulkSelectableItems();
     const hasRemovableItems = categories[currentCategory]?.items.some((item) => item.canClean !== false);
-    selectAllButton.hidden = !hasRemovableItems;
+    selectAllButton.hidden = selectableItems.length === 0;
     selectionStatus.closest("[data-category-controls]").hidden = !hasRemovableItems;
     selectAllButton.disabled = selectableItems.length === 0;
     const allChecked =
       selectableItems.length > 0 &&
       selectableItems.every((item) => selected.has(item.id));
-    const label = allChecked ? "Deselect all" : "Select all";
+    const label = allChecked ? "Deselect temporary files" : "Select all temporary files";
     if (selectAllButton.textContent !== label)
       selectAllButton.textContent = label;
   }
@@ -385,7 +385,7 @@
   function itemDetails(item) {
     const explanations = {
       "unmatched-support": "No matching installed app was found. This does not prove the folder is unused. It may contain settings, mods, or personal data.",
-      cache: "Temporary app data listed from a cache location. Apps may recreate it after removal; review it before removing.",
+      cache: "App data listed from a cache location. Apps may recreate these files. Close affected apps before cleanup.",
       "older-download": "A downloaded file listed because it was not modified in over 30 days. Modification time does not establish when it was downloaded or last opened; keep anything you still need.",
       application: "An application listed in an application folder. Moving it to Trash does not run its vendor uninstaller and may leave support files behind.",
       "startup-file": "Startup configuration listed for review. Removing it may affect future launches and does not stop an already running service.",
@@ -402,6 +402,8 @@
     return [
       !isNative ? "Demo example. No files are read or changed." : "",
       explanation,
+      item.explanation || "",
+      `Owner: ${item.ownerName || "Owner not identified."}`,
       item.canClean === false ? "Read-only inventory. Cleanup is not available for this item." : "",
       item.path ? `Path: ${item.path}` : "",
       `Logical file size: ${size}`,
