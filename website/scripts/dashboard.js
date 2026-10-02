@@ -1,9 +1,28 @@
 (() => {
   "use strict";
 
-  const categories = MacwipeData;
+  const isNative = !!window.webkit?.messageHandlers?.macwipeBridge;
+  const categories = isNative
+    ? {
+        storage: {
+          title: "Storage",
+          description: "Actual files scanned from system paths",
+          items: [],
+        },
+        caches: {
+          title: "Caches",
+          description: "Actual files scanned from system paths",
+          items: [],
+        },
+        downloads: {
+          title: "Downloads",
+          description: "Actual files scanned from system paths",
+          items: [],
+        },
+      }
+    : MacwipeData;
   const { formatMB, createChat } = MacwipeUI;
-  const allItems = Object.values(categories).flatMap(
+  let allItems = Object.values(categories).flatMap(
     (category) => category.items,
   );
   const itemById = new Map(allItems.map((item) => [item.id, item]));
@@ -15,6 +34,7 @@
 
   // Resolve persistent DOM nodes once; event handlers reuse these references.
   const tableBody = document.querySelector("#item-table-body");
+  const fileList = document.querySelector("#file-list");
   const navButtons = document.querySelectorAll("[data-category]");
   const heading = document.querySelector("#dashboard-heading");
   const description = document.querySelector("#category-description");
@@ -26,6 +46,10 @@
   const reviewDialog = document.querySelector("#review-dialog");
   const reviewList = document.querySelector("#review-items-list");
   const reviewTotal = document.querySelector("#review-total-size");
+  const previewNote = document.querySelector(".preview-note");
+  const reviewIntro = reviewDialog.querySelector(".dialog-body > p");
+  const reviewNotice = document.querySelector("#review-notice");
+  const confirmButton = document.querySelector("#review-simulate-btn");
   const openDetails = createChat(document.querySelector("#details-dialog"));
 
   function updateSelection() {
@@ -34,15 +58,20 @@
     if (selectionStatus.textContent !== summary)
       selectionStatus.textContent = summary;
     reviewButton.disabled = count === 0;
-    const allChecked = categories[currentCategory].items.every((item) =>
-      selected.has(item.id),
+    const selectableItems = categories[currentCategory].items.filter(
+      (item) => item.canClean !== false,
     );
+    selectAllButton.disabled = selectableItems.length === 0;
+    const allChecked =
+      selectableItems.length > 0 &&
+      selectableItems.every((item) => selected.has(item.id));
     const label = allChecked ? "Deselect all" : "Select all";
     if (selectAllButton.textContent !== label)
       selectAllButton.textContent = label;
   }
 
   function setSelected(item, checked) {
+    if (item.canClean === false) return;
     if (selected.has(item.id) !== checked) {
       if (checked) selected.add(item.id);
       else selected.delete(item.id);
@@ -64,7 +93,12 @@
     const selectCell = document.createElement("td");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
+    checkbox.disabled = item.canClean === false;
     checkbox.dataset.item = item.id;
+    if (isNative) {
+      checkbox.dataset.category = item.category;
+      if (item.path) checkbox.dataset.path = item.path;
+    }
     checkbox.setAttribute("aria-label", `Select ${item.name}`);
     checkboxById.set(item.id, checkbox);
     selectCell.append(checkbox);
@@ -91,10 +125,10 @@
     if (key === currentCategory || !Object.hasOwn(categories, key)) return;
     currentCategory = key;
     const category = categories[key];
-    document.title = `macwipe · ${category.title} · Demo`;
+    document.title = `macwipe · ${category.title} · ${isNative ? "Native" : "Demo"}`;
     heading.textContent = category.title;
     description.textContent = category.description;
-    caption.textContent = `Example ${category.title.toLowerCase()} items`;
+    caption.textContent = `${isNative ? "Local" : "Example"} ${category.title.toLowerCase()} items`;
     navButtons.forEach((button) => {
       if (button.dataset.category === key)
         button.setAttribute("aria-current", "page");
@@ -111,7 +145,9 @@
   }
 
   function selectAll() {
-    const items = categories[currentCategory].items;
+    const items = categories[currentCategory].items.filter(
+      (item) => item.canClean !== false,
+    );
     const checked = !items.every((item) => selected.has(item.id));
     items.forEach((item) => setSelected(item, checked));
     updateSelection();
@@ -119,6 +155,14 @@
 
   function review() {
     if (!selected.size) return;
+    if (isNative) {
+      reviewIntro.textContent = "Selected files for cleanup:";
+      reviewNotice.textContent =
+        "Eligible files will be moved to Trash. Downloads include only files older than 90 days. Trash will not be emptied.";
+      confirmButton.hidden = false;
+      confirmButton.style.display = "";
+      confirmButton.textContent = "Move to Trash";
+    }
     // Keep the original category/item order in the review, independent of clicks.
     const items = allItems.filter((item) => selected.has(item.id));
     const fragment = document.createDocumentFragment();
@@ -132,12 +176,42 @@
     reviewDialog.showModal();
   }
 
+  function scrollFiles(direction) {
+    fileList.scrollBy({
+      top: direction * fileList.clientHeight * 0.75,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
+  }
+
   const actions = {
-    // Data is static; preview refreshes state without rebuilding rows.
-    preview: refreshSelection,
+    "scroll-up": () => scrollFiles(-1),
+    "scroll-down": () => scrollFiles(1),
+    preview: () => {
+      if (isNative) {
+        previewNote.textContent = "Scanning local files...";
+        window.macwipeUI.scan();
+      } else refreshSelection();
+    },
     "select-all": selectAll,
     review,
     simulate: () => {
+      if (isNative) {
+        const grouped = new Map();
+        selected.forEach((id) => {
+          const item = itemById.get(id);
+          if (!grouped.has(item.category)) grouped.set(item.category, []);
+          grouped.get(item.category).push(item.path);
+        });
+        const selectedCategories = Array.from(grouped, ([id, paths]) => ({
+          id,
+          paths,
+        }));
+        if (window.macwipeUI.delete(selectedCategories) !== false)
+          reviewDialog.close();
+        return;
+      }
       reviewDialog.close();
       selected.forEach((id) => setSelected(itemById.get(id), false));
       updateSelection();
@@ -165,5 +239,100 @@
     updateSelection();
   });
 
+  if (isNative) {
+    document.querySelector(".demo-tag").textContent = "Native · System Scan";
+    previewNote.textContent = "Scanning local files...";
+    document.querySelector(".dashboard > .status-strip").textContent =
+      "macOS helper · Native · System Scan";
+    document
+      .querySelector(".table-scroll")
+      .setAttribute("aria-label", "Local scanned files");
+    navButtons.forEach((button) => {
+      button.disabled = !Object.hasOwn(categories, button.dataset.category);
+    });
+
+    // Keep the bridge's scan snapshot and pending-operation state in sync.
+    const nativeUI = window.macwipeUI;
+    const receiveScanData = nativeUI.receiveScanData;
+    const onCleanupComplete = nativeUI.onCleanupComplete;
+    nativeUI.receiveScanData = function (payload) {
+      receiveScanData.call(this, payload);
+      allItems = ["caches", "logs", "trash", "downloads"].flatMap((id) => {
+        const scan = payload.categories[id];
+        const name = id[0].toUpperCase() + id.slice(1);
+        if (scan.items.length)
+          return scan.items.map((file) => ({
+            id: JSON.stringify([id, file.path]),
+            category: id,
+            path: file.path,
+            name: `${name} · ${file.name}`,
+            mb: file.bytes / 1_000_000,
+            info: file.formatted || formatMB(file.bytes / 1_000_000),
+            details: `${file.path}. ${payload.sizeMeaning}`,
+            canClean: scan.canClean && !scan.error && id !== "trash",
+          }));
+        // Swift does not enumerate Trash or non-eligible downloads in items.
+        return [
+          {
+            id,
+            category: id,
+            name,
+            mb: 0,
+            info:
+              scan.error ||
+              `${formatMB(scan.bytes / 1_000_000)} total · No eligible files`,
+            details:
+              scan.error ||
+              `${scan.formatted} in this category. ${scan.eligibleFormatted} eligible to move to Trash. ${payload.sizeMeaning}`,
+            canClean: false,
+          },
+        ];
+      });
+      categories.storage.items = allItems;
+      categories.caches.items = allItems.filter(
+        (item) => item.category === "caches",
+      );
+      categories.downloads.items = allItems.filter(
+        (item) => item.category === "downloads",
+      );
+      itemById.clear();
+      allItems.forEach((item) => itemById.set(item.id, item));
+      selected.clear();
+      selectedMB = 0;
+      cachedRows.clear();
+      checkboxById.clear();
+      const key = currentCategory;
+      currentCategory = null;
+      switchCategory(key);
+      previewNote.textContent = allItems.some(
+        (item) => payload.categories[item.category].error,
+      )
+        ? "Scan complete. Some categories are unavailable or incomplete."
+        : "Scan complete. Review local files before cleanup.";
+      if (reviewDialog.open && !confirmButton.hidden) reviewDialog.close();
+    };
+    nativeUI.onCleanupComplete = function (freedMB, result = {}) {
+      onCleanupComplete.call(this, freedMB, result);
+      reviewIntro.textContent = "Cleanup complete.";
+      reviewList.replaceChildren();
+      reviewTotal.textContent = formatMB(result.diskFreedMB ?? freedMB);
+      reviewNotice.textContent =
+        result.diskFreedMB !== undefined
+          ? `${formatMB(freedMB)} moved to Trash. Disk space freed: ${formatMB(result.diskFreedMB)}.`
+          : `Disk space freed: ${formatMB(freedMB)}.`;
+      if (result.errors?.length)
+        reviewNotice.textContent += ` ${result.errors.join(" ")}`;
+      confirmButton.hidden = true;
+      confirmButton.style.display = "none";
+      if (!reviewDialog.open) reviewDialog.showModal();
+      // The existing bridge queues the automatic Swift rescan on completion.
+      nativeUI.scan();
+    };
+    window.addEventListener("macwipe:error", (event) => {
+      previewNote.textContent = event.detail.message;
+    });
+  }
+
   switchCategory("storage");
+  if (isNative) window.macwipeUI.scan();
 })();

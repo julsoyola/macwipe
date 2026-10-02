@@ -1,11 +1,12 @@
 # macwipe
 
-A quiet, retro Mac cleanup dashboard demo. Built with HTML, CSS, and vanilla
-JavaScript. No install, build step, account, or runtime dependencies.
+A quiet, retro Mac cleanup dashboard with separate local cleanup managers.
+The website uses HTML, CSS, and vanilla JavaScript and needs no install,
+build step, account, or runtime dependencies.
 
 **Use the public demo:** https://macwipe.vercel.app
 
-**Example data only:** the demo cannot scan your Mac or delete files.
+**Browser demo uses example data only:** it cannot scan your Mac or delete files.
 Simulate cleanup clears selections. Chat messages stay in browser memory;
 there are no server requests, analytics, or saved chat history.
 The native helper download is not available yet.
@@ -51,13 +52,88 @@ After downloading, the demo works offline.
 
 ## Files
 
-- `website/index.html` and `website/dashboard.html`: the two pages.
-- `website/styles/`: shared theme and dashboard layout.
-- `website/scripts/`: shared UI, example data, and page behavior.
-- `website/assets/`: local SVG icons.
+- `website/`: the standalone website, styling, assets, and dashboard UI.
+- `website/macwipe-bridge.js`: the UI adapter for the Swift native bridge.
+- `native/`: the Swift WKWebView wrapper and filesystem manager.
+- `mac_scrubber/`: the separate Python CLI manager and local helper scaffold.
+- `tests/`: Python safety/runtime tests and browser demo checks.
+- `.github/workflows/tests.yml`: Python tests on macOS.
 - `docs/screenshots/`: small README previews.
 
-MIT license. Only the web demo is included; no native cleanup tools are shipped.
+Website hosting includes only `website/`. Swift and Python manager code stays
+outside the website. Generated `.app` bundles and build output are ignored.
+
+## Native dashboard
+
+Requires macOS 13 or newer and the Xcode command-line tools. Build and launch:
+
+```sh
+./native/build.sh
+open native/build/macwipe.app
+```
+
+The native dashboard scans local Caches, Logs, Trash, and Downloads. It shows
+eligible file rows, supports file selection and review, and moves confirmed
+selections to Trash. Downloads are eligible only when they are top-level files
+older than 90 days; folders and recent downloads stay in place. Trash is shown
+as a total and is never emptied. Incomplete categories cannot be cleaned.
+
+Moving files to Trash does not free disk space. The completion dialog reports
+space moved separately from actual disk space freed, then the native manager
+rescans. Filesystem permissions can prevent scanning or cleanup.
+
+See [native/README.md](native/README.md) for source and build details. No signed
+or notarized native download is provided.
+
+## Python manager
+
+Requires Python 3.9 or newer on macOS; it uses the standard library only.
+Run from the repository root:
+
+```sh
+python3.11 -m mac_scrubber --help
+python3.11 -m mac_scrubber scan --section Caches --json
+python3.11 -m mac_scrubber interactive --dry-run
+```
+
+Scanning is read-only. Plans require explicit candidate IDs. Real execution
+requires an interactive terminal and the exact confirmation phrase shown by
+the manager; JSON output cannot bypass confirmation.
+
+Supported cleanup candidates are individual top-level Downloads files, pip's
+`Library/Caches/pip/http-v2` and `Library/Caches/pip/wheels` directories, and
+Homebrew cleanup with a reviewed dry-run. Python Downloads selection does not
+use the Swift manager's 90-day filter. Files and pip caches move to Trash;
+Homebrew cleanup can permanently remove stale downloads and old versions.
+Applications and startup settings are inventory/manual review only.
+
+The Python loopback helper is a scaffold: its separate `mac_scrubber/ui/`
+assets are not included, so it does not yet provide a usable browser manager.
+The website's native bridge connects to Swift, not the Python helper.
+
+## Development and tests
+
+```sh
+python3.11 -m unittest discover -s tests -v
+git diff --check
+```
+
+Browser checks use Playwright and Google Chrome. Keep test dependencies outside
+the repository; the website itself has no Node dependency:
+
+```sh
+MACWIPE_TEST_TOOLS="$(mktemp -d /tmp/macwipe-test-tools.XXXXXX)"
+npm install --prefix "$MACWIPE_TEST_TOOLS" playwright
+NODE_PATH="$MACWIPE_TEST_TOOLS/node_modules" node tests/web-demo.cjs
+```
+
+The browser test expects Chrome at
+`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` and writes
+screenshots to a temporary directory. Python tests use fixtures and mocked
+commands; do not test cleanup against personal files.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for cleanup rules and review requirements.
+MIT license.
 
 ## Hosting
 

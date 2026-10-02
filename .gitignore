@@ -9,3 +9,5 @@ reports/
 *.report.json
 .DS_Store
 .vercel/
+/native/*.app/
+/native/build/

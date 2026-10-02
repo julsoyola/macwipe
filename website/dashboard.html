@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="styles/dashboard.css" />
     <script src="scripts/ui.js" defer></script>
     <script src="scripts/demo-data.js" defer></script>
+    <script src="macwipe-bridge.js" defer></script>
     <script src="scripts/dashboard.js" defer></script>
   </head>
   <body>
@@ -119,6 +120,31 @@
               ><p>Enable JavaScript to try the interactive demo.</p></noscript
             >
             <div
+              class="list-navigation"
+              role="group"
+              aria-label="Scroll file list"
+            >
+              <button
+                class="question-row"
+                type="button"
+                data-action="scroll-up"
+                aria-label="Scroll file list up"
+                aria-controls="file-list"
+              >
+                ▲
+              </button>
+              <button
+                class="question-row"
+                type="button"
+                data-action="scroll-down"
+                aria-label="Scroll file list down"
+                aria-controls="file-list"
+              >
+                ▼
+              </button>
+            </div>
+            <div
+              id="file-list"
               class="table-scroll"
               role="region"
               aria-label="Example items"

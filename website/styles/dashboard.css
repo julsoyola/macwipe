@@ -63,15 +63,30 @@
   margin: 16px 0 20px;
   font-size: 12px;
 }
+.list-navigation {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.list-navigation .question-row {
+  width: 32px;
+  min-height: 28px;
+  padding: 4px;
+  justify-content: center;
+  font-size: 12px;
+}
 .table-scroll {
-  overflow-x: auto;
+  max-height: 420px;
+  overflow: auto;
 }
 .item-list {
   width: 100%;
   min-width: 440px;
   border-collapse: collapse;
   text-align: left;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.25;
 }
 .item-list caption {
   padding: 10px 0;
@@ -81,7 +96,7 @@
 }
 .item-list th,
 .item-list td {
-  padding: 14px 8px;
+  padding: 6px 8px;
   border-bottom: 2px solid var(--ink);
   overflow-wrap: anywhere;
 }
@@ -114,8 +129,9 @@
 .item-list .question-row {
   white-space: nowrap;
   width: auto;
-  min-height: 36px;
-  padding: 5px 8px;
+  min-height: 26px;
+  padding: 3px 6px;
+  font-size: 12px;
 }
 .bottom-bar {
   justify-content: space-between;

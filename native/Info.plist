@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"\>
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>macwipe</string>
+    <key>CFBundleIdentifier</key>
+    <string>app.macwipe.native</string>
+    <key>CFBundleName</key>
+    <string>macwipe</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>macwipe needs access to your Downloads folder to scan for stale files and move them to the Trash.</string>
+</dict>
+</plist>
