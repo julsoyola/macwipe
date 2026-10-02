@@ -311,6 +311,11 @@
 .item-list thead {
   background: var(--status);
 }
+.item-list .item-review-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
 .item-list th:first-child,
 .item-list td:first-child {
   width: 76px;

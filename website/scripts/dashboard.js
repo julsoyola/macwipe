@@ -102,9 +102,11 @@
         return;
       }
       let items = category.items.filter(
-        (item) => isNative
-          ? item.canClean === true
-          : item.canClean !== false && (key !== "downloads" || item.ageDays > 90),
+        (item) => item.kind !== "unmatched-support"
+          && item.homeRecommendationEligible
+          && (isNative
+            ? item.canClean === true
+            : item.canClean !== false && (key !== "downloads" || item.ageDays > 90)),
       );
       if (isNative) {
         items = [...new Map(items.map((item) => [item.path, item])).values()];
@@ -252,10 +254,7 @@
     if (selectionStatus.textContent !== summary)
       selectionStatus.textContent = summary;
     reviewButton.disabled = count === 0;
-    const cat = categories[currentCategory];
-    const selectableItems = (cat && cat.items ? cat.items : []).filter(
-      (item) => item.canClean !== false,
-    );
+    const selectableItems = bulkSelectableItems();
     selectAllButton.disabled = selectableItems.length === 0;
     const allChecked =
       selectableItems.length > 0 &&
@@ -286,6 +285,9 @@
   }
 
   function createRow(item) {
+    const unmatched = item.kind === "unmatched-support";
+    const name = unmatched && item.path
+      ? item.path.split("/").filter(Boolean).at(-1) : item.name;
     const row = document.createElement("tr");
     const selectCell = document.createElement("td");
     const checkbox = document.createElement("input");
@@ -296,12 +298,18 @@
       checkbox.dataset.category = item.category;
       if (item.path) checkbox.dataset.path = item.path;
     }
-    checkbox.setAttribute("aria-label", `Select ${item.name}`);
+    checkbox.setAttribute("aria-label", `Select ${name}`);
     checkboxById.set(item.id, checkbox);
     selectCell.append(checkbox);
 
     const nameCell = document.createElement("td");
-    nameCell.textContent = item.name;
+    nameCell.textContent = name;
+    if (unmatched) {
+      const warning = document.createElement("small");
+      warning.className = "item-review-label";
+      warning.textContent = "Unmatched support — review carefully";
+      nameCell.append(warning);
+    }
     const infoCell = document.createElement("td");
     infoCell.textContent = item.info || formatMB(item.mb);
     const detailsCell = document.createElement("td");
@@ -310,7 +318,7 @@
     detailsButton.className = "question-row";
     detailsButton.dataset.details = item.id;
     detailsButton.textContent = "Details";
-    detailsButton.setAttribute("aria-label", `Details about ${item.name}`);
+    detailsButton.setAttribute("aria-label", `Details about ${name}`);
     detailsButton.setAttribute("aria-haspopup", "dialog");
     detailsButton.setAttribute("aria-controls", "details-dialog");
     detailsCell.append(detailsButton);
@@ -366,11 +374,16 @@
     refreshSelection();
   }
 
-  function selectAll() {
+  function bulkSelectableItems() {
     const cat = categories[currentCategory];
-    const items = (cat && cat.items ? cat.items : []).filter(
-      (item) => item.canClean !== false,
+    return (cat?.items || []).filter(
+      (item) => item.canClean !== false && item.bulkSelectionEligible
+        && item.kind !== "unmatched-support",
     );
+  }
+
+  function selectAll() {
+    const items = bulkSelectableItems();
     const checked = !items.every((item) => selected.has(item.id));
     items.forEach((item) => setSelected(item, checked));
     updateSelection();
