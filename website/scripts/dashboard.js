@@ -2,28 +2,23 @@
   "use strict";
 
   const isNative = !!window.webkit?.messageHandlers?.macwipeBridge;
+
   const categories = isNative
-    ? {
-        storage: {
-          title: "Storage",
-          description: "Actual files scanned from system paths",
-          items: [],
-        },
-        caches: {
-          title: "Caches",
-          description: "Actual files scanned from system paths",
-          items: [],
-        },
-        downloads: {
-          title: "Downloads",
-          description: "Actual files scanned from system paths",
-          items: [],
-        },
-      }
+    ? Object.fromEntries(
+        Object.entries(MacwipeData).map(([key, category]) => [
+          key,
+          {
+            title: category.title,
+            description: "Actual files scanned from system paths",
+            items: [],
+          },
+        ]),
+      )
     : MacwipeData;
+
   const { formatMB, createChat } = MacwipeUI;
   let allItems = Object.values(categories).flatMap(
-    (category) => category.items,
+    (category) => category.items || [],
   );
   const itemById = new Map(allItems.map((item) => [item.id, item]));
   const selected = new Set();
@@ -58,7 +53,8 @@
     if (selectionStatus.textContent !== summary)
       selectionStatus.textContent = summary;
     reviewButton.disabled = count === 0;
-    const selectableItems = categories[currentCategory].items.filter(
+    const cat = categories[currentCategory];
+    const selectableItems = (cat && cat.items ? cat.items : []).filter(
       (item) => item.canClean !== false,
     );
     selectAllButton.disabled = selectableItems.length === 0;
@@ -82,6 +78,8 @@
   }
 
   function refreshSelection() {
+    if (!categories[currentCategory] || !categories[currentCategory].items)
+      return;
     categories[currentCategory].items.forEach((item) => {
       setSelected(item, selected.has(item.id));
     });
@@ -128,7 +126,7 @@
     document.title = `macwipe · ${category.title} · ${isNative ? "Native" : "Demo"}`;
     heading.textContent = category.title;
     description.textContent = category.description;
-    caption.textContent = `${isNative ? "Local" : "Example"} ${category.title.toLowerCase()} items`;
+    caption.textContent = `${category.title} items`;
     navButtons.forEach((button) => {
       if (button.dataset.category === key)
         button.setAttribute("aria-current", "page");
@@ -136,16 +134,28 @@
     });
 
     if (!cachedRows.has(key))
-      cachedRows.set(key, category.items.map(createRow));
-    // Build off-document and replace once. Revisit rows without recreating them.
+      cachedRows.set(key, (category.items || []).map(createRow));
+
     const fragment = document.createDocumentFragment();
     fragment.append(...cachedRows.get(key));
+    if (isNative && !category.items.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 4;
+      cell.textContent = "No accessible eligible items found.";
+      row.append(cell);
+      fragment.append(row);
+    }
     tableBody.replaceChildren(fragment);
+    tableBody.querySelectorAll("input[data-item]").forEach((checkbox) => {
+      checkboxById.set(checkbox.dataset.item, checkbox);
+    });
     refreshSelection();
   }
 
   function selectAll() {
-    const items = categories[currentCategory].items.filter(
+    const cat = categories[currentCategory];
+    const items = (cat && cat.items ? cat.items : []).filter(
       (item) => item.canClean !== false,
     );
     const checked = !items.every((item) => selected.has(item.id));
@@ -158,12 +168,11 @@
     if (isNative) {
       reviewIntro.textContent = "Selected files for cleanup:";
       reviewNotice.textContent =
-        "Eligible files will be moved to Trash. Downloads include only files older than 90 days. Trash will not be emptied.";
+        "Selected files will be moved to Trash. Applications and support folders may contain personal data. Removing startup files does not stop running services. Close affected apps and browsers first.";
       confirmButton.hidden = false;
       confirmButton.style.display = "";
-      confirmButton.textContent = "Move to Trash";
+      confirmButton.textContent = "Clean Selected";
     }
-    // Keep the original category/item order in the review, independent of clicks.
     const items = allItems.filter((item) => selected.has(item.id));
     const fragment = document.createDocumentFragment();
     items.forEach((item) => {
@@ -201,8 +210,10 @@
         const grouped = new Map();
         selected.forEach((id) => {
           const item = itemById.get(id);
-          if (!grouped.has(item.category)) grouped.set(item.category, []);
-          grouped.get(item.category).push(item.path);
+          if (!item) return;
+          const catKey = item.category;
+          if (!grouped.has(catKey)) grouped.set(catKey, []);
+          grouped.get(catKey).push(item.path);
         });
         const selectedCategories = Array.from(grouped, ([id, paths]) => ({
           id,
@@ -215,12 +226,10 @@
       reviewDialog.close();
       selected.forEach((id) => setSelected(itemById.get(id), false));
       updateSelection();
-      // The review trigger is now disabled; return focus to a usable control.
       previewButton.focus();
     },
   };
 
-  // Delegation keeps listener count fixed across category changes and scans.
   document.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button || button.disabled) return;
@@ -232,6 +241,7 @@
       actions[button.dataset.action]();
     }
   });
+
   tableBody.addEventListener("change", (event) => {
     const item = itemById.get(event.target.dataset.item);
     if (!item) return;
@@ -242,59 +252,38 @@
   if (isNative) {
     document.querySelector(".demo-tag").textContent = "Native · System Scan";
     previewNote.textContent = "Scanning local files...";
+    fileList.setAttribute("aria-label", "Local scanned files");
     document.querySelector(".dashboard > .status-strip").textContent =
       "macOS helper · Native · System Scan";
-    document
-      .querySelector(".table-scroll")
-      .setAttribute("aria-label", "Local scanned files");
-    navButtons.forEach((button) => {
-      button.disabled = !Object.hasOwn(categories, button.dataset.category);
-    });
 
-    // Keep the bridge's scan snapshot and pending-operation state in sync.
     const nativeUI = window.macwipeUI;
     const receiveScanData = nativeUI.receiveScanData;
     const onCleanupComplete = nativeUI.onCleanupComplete;
+
     nativeUI.receiveScanData = function (payload) {
-      receiveScanData.call(this, payload);
-      allItems = ["caches", "logs", "trash", "downloads"].flatMap((id) => {
-        const scan = payload.categories[id];
-        const name = id[0].toUpperCase() + id.slice(1);
-        if (scan.items.length)
-          return scan.items.map((file) => ({
-            id: JSON.stringify([id, file.path]),
-            category: id,
-            path: file.path,
-            name: `${name} · ${file.name}`,
-            mb: file.bytes / 1_000_000,
-            info: file.formatted || formatMB(file.bytes / 1_000_000),
-            details: `${file.path}. ${payload.sizeMeaning}`,
-            canClean: scan.canClean && !scan.error && id !== "trash",
-          }));
-        // Swift does not enumerate Trash or non-eligible downloads in items.
-        return [
-          {
-            id,
-            category: id,
-            name,
-            mb: 0,
-            info:
-              scan.error ||
-              `${formatMB(scan.bytes / 1_000_000)} total · No eligible files`,
-            details:
-              scan.error ||
-              `${scan.formatted} in this category. ${scan.eligibleFormatted} eligible to move to Trash. ${payload.sizeMeaning}`,
-            canClean: false,
-          },
-        ];
-      });
-      categories.storage.items = allItems;
-      categories.caches.items = allItems.filter(
-        (item) => item.category === "caches",
-      );
-      categories.downloads.items = allItems.filter(
-        (item) => item.category === "downloads",
-      );
+      if (receiveScanData) receiveScanData.call(this, payload);
+
+      for (const [key, category] of Object.entries(categories)) {
+        category.items = (payload.categories[key]?.items || []).map((file) => ({
+          id: file.id,
+          category: file.category,
+          path: file.path,
+          name: file.name,
+          mb: file.bytes / 1_000_000,
+          info: file.formatted || formatMB(file.bytes / 1_000_000),
+          details: `${file.path}. ${payload.sizeMeaning || ""}`,
+          canClean: file.canClean === true,
+        }));
+      }
+      // Storage and category tabs can share a file; review each ID only once.
+      allItems = [
+        ...new Map(
+          Object.values(categories).flatMap((category) =>
+            category.items.map((item) => [item.id, item]),
+          ),
+        ).values(),
+      ];
+
       itemById.clear();
       allItems.forEach((item) => itemById.set(item.id, item));
       selected.clear();
@@ -303,30 +292,24 @@
       checkboxById.clear();
       const key = currentCategory;
       currentCategory = null;
-      switchCategory(key);
-      previewNote.textContent = allItems.some(
-        (item) => payload.categories[item.category].error,
-      )
-        ? "Scan complete. Some categories are unavailable or incomplete."
-        : "Scan complete. Review local files before cleanup.";
+      switchCategory(key || "storage");
+
+      previewNote.textContent = "Scan complete. Review files before cleanup.";
       if (reviewDialog.open && !confirmButton.hidden) reviewDialog.close();
     };
+
     nativeUI.onCleanupComplete = function (freedMB, result = {}) {
-      onCleanupComplete.call(this, freedMB, result);
+      if (onCleanupComplete) onCleanupComplete.call(this, freedMB, result);
       reviewIntro.textContent = "Cleanup complete.";
       reviewList.replaceChildren();
       reviewTotal.textContent = formatMB(result.diskFreedMB ?? freedMB);
-      reviewNotice.textContent =
-        result.diskFreedMB !== undefined
-          ? `${formatMB(freedMB)} moved to Trash. Disk space freed: ${formatMB(result.diskFreedMB)}.`
-          : `Disk space freed: ${formatMB(freedMB)}.`;
-      if (result.errors?.length)
-        reviewNotice.textContent += ` ${result.errors.join(" ")}`;
+      reviewNotice.textContent = `Disk space freed: ${formatMB(result.diskFreedMB ?? freedMB)}.`;
       confirmButton.hidden = true;
       confirmButton.style.display = "none";
       if (!reviewDialog.open) reviewDialog.showModal();
-      // The existing bridge queues the automatic Swift rescan on completion.
-      nativeUI.scan();
+      if (result.errors?.length)
+        reviewNotice.textContent += ` ${result.errors.join(" ")}`;
+      if (nativeUI.scan) nativeUI.scan();
     };
     window.addEventListener("macwipe:error", (event) => {
       previewNote.textContent = event.detail.message;
@@ -334,5 +317,5 @@
   }
 
   switchCategory("storage");
-  if (isNative) window.macwipeUI.scan();
+  if (isNative && window.macwipeUI?.scan) window.macwipeUI.scan();
 })();

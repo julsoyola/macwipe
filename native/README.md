@@ -10,23 +10,59 @@ the independent Python manager stays in `../mac_scrubber/`.
 - `Info.plist`: app metadata and Downloads access description.
 - `Web/macwipe-bridge.js`: injected UI bridge, mirrored in
   `../website/macwipe-bridge.js` for explicit HTML script loading.
-- `build.sh`: compiles Swift and copies website resources into a local bundle.
+- `build.sh`: compiles Swift, copies website resources, signs with
+  `macwipe.entitlements`, and verifies the resulting bundle.
 
 From the repository root, with the Xcode command-line tools installed:
 
 ```sh
-./native/build.sh
-open native/build/macwipe.app
+./native/build.sh --launch
 ```
 
 Builds go to `native/build/macwipe.app`, which is ignored by Git. The build
 does not launch the app, scan files, or perform cleanup. Launching the app
-starts a local scan. This development build is not signed for distribution
-or notarized.
+starts a local scan. The build uses an ad-hoc development signature with the
+entitlements in this directory; it is not signed for distribution or notarized.
 
-Swift scans `~/Library/Caches`, `~/Library/Logs`, `~/.Trash`, and `~/Downloads`.
-Downloads cleanup covers only top-level regular files older than 90 days.
-Trash is read-only and provides a category total, not individual file rows.
-Scans report logical file bytes. Cleanup moves approved files to Trash and
-does not reclaim disk space. Permission errors disable cleanup for affected
-categories; changed files are rejected and require another scan.
+| Tab | Local scan paths |
+| --- | --- |
+| Storage | Overview of Caches, Logs, Trash totals, and stale Downloads |
+| Caches | `~/Library/Caches` |
+| Downloads | Top-level regular files older than 90 days in `~/Downloads` |
+| Applications | `/Applications`, `~/Applications`, unmatched folders in `~/Library/Application Support` |
+| Startup | `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons` |
+| Performance | `/var/log`, `~/Library/Logs/DiagnosticReports` |
+| Privacy | Safari history/session/storage traces, cookie stores, and Chrome profile history/cookies |
+
+Native mode contains no fallback example rows. Every emitted item has an ID,
+category, absolute path, name, byte count, formatted size, and `canClean: true`.
+Unreadable entries are skipped; accessible siblings remain selectable. A
+partly unreadable directory is not approved wholesale, and unreadable apps are
+skipped. Trash is read-only and is never emptied.
+
+Application-support names are compared with installed app names, bundle IDs,
+and vendor components. Unmatched folders are candidates for review, not proven
+orphans. They can contain personal data. Applications are moved to Trash;
+this does not run vendor uninstallers or remove all supporting files. Startup
+cleanup moves selected plist files; it does not unload active services.
+Privacy scanning excludes bookmarks and password stores. Close affected apps
+and browsers before confirming cleanup.
+
+Cleanup accepts only paths approved by the latest scan and rechecks their
+identity and contents before moving them to Trash. Changed files are rejected.
+Overlapping selections move a parent folder only once. Logical file bytes are
+not reclaimable disk space; moving to Trash does not reclaim disk space.
+Signing does not grant administrator permissions or Full Disk Access;
+restricted system and browser paths may remain unavailable.
+
+Run fixture-only native checks without touching personal files:
+
+```sh
+python3 tests/native-tests.py
+./native/build.sh
+python3 tests/native-tests.py --ui
+```
+
+The UI check loads the built web resources into a real WKWebView with temporary
+scan roots and a stub Trash operation, verifies all tabs, and exercises review,
+cleanup callbacks, and the subsequent rescan.

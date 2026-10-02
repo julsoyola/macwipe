@@ -199,4 +199,16 @@
   .content-pane {
     padding: 24px 16px;
   }
+  /* Ensure all table checkboxes are fully interactive and never greyed out unless explicitly disabled */
+#item-table-body input[type="checkbox"] {
+  opacity: 1 !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  filter: none !important;
+ }
+
+  #item-table-body input[type="checkbox"]:disabled {
+    opacity: 0.3 !important;
+    cursor: not-allowed !important;
+  }
 }

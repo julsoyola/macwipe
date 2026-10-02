@@ -2,13 +2,15 @@
   "use strict";
   // Safe if also included by a script tag in dashboard.html.
   // Native UI hooks: data-macwipe-action="scan|keep|delete" on buttons;
-  // data-category="caches|logs|downloads" on selection checkboxes;
+  // data-category="caches|logs|downloads|applications|startup|performance|privacy" on selection checkboxes;
   // data-macwipe-size="caches|logs|trash|downloads" on size labels;
   // data-macwipe-status on a status element (prefer role="status").
   // CustomEvents macwipe:scan/cleanup/keep/error expose the full results.
   if (window.macwipeUI) return;
 
-  const allowedCategories = new Set(["caches", "logs", "downloads"]);
+  const allowedCategories = new Set([
+    "caches", "logs", "downloads", "applications", "startup", "performance", "privacy",
+  ]);
   let pendingAction = null;
   let lastScan = null;
   const disabledButtons = new Set();
@@ -101,7 +103,7 @@
           if (!allowedCategories.has(id) || !scan?.canClean) return false;
           if (typeof entry === "string") return true;
           return Array.isArray(entry.paths) && entry.paths.length > 0
-            && entry.paths.every((path) => scan.items.some((item) => item.path === path));
+            && entry.paths.every((path) => scan.items.some((item) => item.path === path && item.canClean === true));
         });
       if (!valid) {
         ui.onNativeError({ action: "deleteFiles", message: "Scan and select eligible items first." });
@@ -126,7 +128,8 @@
         document.querySelectorAll(`input[type="checkbox"][data-category="${id}"]`)
           .forEach((checkbox) => {
             checkbox.checked = false;
-            checkbox.disabled = !category.canClean;
+            checkbox.disabled = !category.items.some((item) =>
+              item.path === checkbox.dataset.path && item.canClean === true);
           });
       }
       const incomplete = Object.values(payload.categories).some((category) => category.error);

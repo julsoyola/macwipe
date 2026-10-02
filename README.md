@@ -68,15 +68,24 @@ outside the website. Generated `.app` bundles and build output are ignored.
 Requires macOS 13 or newer and the Xcode command-line tools. Build and launch:
 
 ```sh
-./native/build.sh
-open native/build/macwipe.app
+./native/build.sh --launch
 ```
 
-The native dashboard scans local Caches, Logs, Trash, and Downloads. It shows
-eligible file rows, supports file selection and review, and moves confirmed
-selections to Trash. Downloads are eligible only when they are top-level files
+All seven native tabs scan real local paths: Storage, Caches, Downloads,
+Applications, Startup, Performance, and Privacy. Native rows support file
+selection and review, and confirmed selections move to Trash. Downloads are
+eligible only when they are top-level files
 older than 90 days; folders and recent downloads stay in place. Trash is shown
-as a total and is never emptied. Incomplete categories cannot be cleaned.
+as a total and is never emptied. Unreadable entries are skipped without
+disabling accessible siblings. Empty tabs contain no example data.
+
+Applications include installed apps and unmatched application-support
+candidates; unmatched names do not prove a folder is orphaned. Startup covers
+user and system launch plists. Performance covers system logs and diagnostic
+reports. Privacy covers Safari traces and Safari/Chrome history and cookies,
+excluding bookmarks and password stores. Review these paths carefully and
+close affected apps before confirming. Moving startup plists does not stop
+already-running services. System and browser permissions still apply.
 
 Moving files to Trash does not free disk space. The completion dialog reports
 space moved separately from actual disk space freed, then the native manager
@@ -115,6 +124,9 @@ The website's native bridge connects to Swift, not the Python helper.
 
 ```sh
 python3.11 -m unittest discover -s tests -v
+python3 tests/native-tests.py
+./native/build.sh
+python3 tests/native-tests.py --ui
 git diff --check
 ```
 
@@ -125,6 +137,7 @@ the repository; the website itself has no Node dependency:
 MACWIPE_TEST_TOOLS="$(mktemp -d /tmp/macwipe-test-tools.XXXXXX)"
 npm install --prefix "$MACWIPE_TEST_TOOLS" playwright
 NODE_PATH="$MACWIPE_TEST_TOOLS/node_modules" node tests/web-demo.cjs
+NODE_PATH="$MACWIPE_TEST_TOOLS/node_modules" node tests/native-dashboard.cjs
 ```
 
 The browser test expects Chrome at

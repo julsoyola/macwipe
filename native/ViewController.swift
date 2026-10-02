@@ -88,7 +88,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if isDashboard(webView.url), !busy { requestScan() }
+        // dashboard.js requests the initial scan after registering callbacks.
     }
 
     func userContentController(_ userContentController: WKUserContentController,
@@ -100,6 +100,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
               let action = body["action"] as? String else { return }
 
         guard !busy else {
+            if action == "requestScan" { return }
             send("onNativeError", BridgeError(action: action, message: "An operation is already running."))
             return
         }
@@ -189,14 +190,7 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
 
 private enum Category: String, CaseIterable, Sendable {
     case caches, logs, trash, downloads
-    var relativePath: String {
-        switch self {
-        case .caches: return "Library/Caches"
-        case .logs: return "Library/Logs"
-        case .trash: return ".Trash"
-        case .downloads: return "Downloads"
-        }
-    }
+    case applications, startup, performance, privacy
 }
 
 private struct CleanupSelection: Decodable, Sendable {
@@ -221,10 +215,13 @@ private struct BridgeError: Encodable, Sendable {
 }
 
 private struct ScanItem: Encodable, Sendable {
+    let id: String
+    let category: String
     let path: String
     let name: String
     let bytes: UInt64
     let formatted: String
+    let canClean: Bool
 }
 
 private struct CategoryScan: Encodable, Sendable {
@@ -253,11 +250,16 @@ private struct CleanupResult: Encodable, Sendable {
 // Confined to fileQueue. Sendable only permits passing its reference to that queue.
 private final class FileWorker: @unchecked Sendable {
     private let home: URL
+    private let systemRoot: URL
     private let manager = FileManager.default
-    private var approved: [Category: [String: MeasuredItem]] = [:]
+    private let trashItem: (URL) throws -> Void
+    private var approved: [Category: [String: ApprovedItem]] = [:]
     private let staleAge: TimeInterval = 90 * 24 * 60 * 60
 
-    init(home: URL? = nil) {
+    init(home: URL? = nil, systemRoot: URL = URL(fileURLWithPath: "/"),
+         trashItem: @escaping (URL) throws -> Void = {
+             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
+         }) {
         // NSHomeDirectory() may be the app container in a sandboxed app.
         let accountHome = getpwuid(getuid()).flatMap { entry in
             entry.pointee.pw_dir.map { URL(fileURLWithPath: String(cString: $0), isDirectory: true) }
@@ -265,52 +267,174 @@ private final class FileWorker: @unchecked Sendable {
         let candidate = home ?? accountHome ?? manager.homeDirectoryForCurrentUser
         self.home = URL(fileURLWithPath: Self.resolvedPath(candidate) ?? candidate.path,
                         isDirectory: true)
+        self.systemRoot = systemRoot
+        self.trashItem = trashItem
     }
 
     func scan(now: Date = Date()) -> ScanData {
         approved.removeAll()
         var results: [String: CategoryScan] = [:]
+        let applications = roots(for: .applications).prefix(2).flatMap { applicationURLs(in: $0) }
+        var installedNames = Set<String>()
+        for app in applications {
+            installedNames.insert(app.deletingPathExtension().lastPathComponent.lowercased())
+            if let data = try? Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")),
+               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+               let info = plist as? [String: Any],
+               let identifier = info["CFBundleIdentifier"] as? String {
+                installedNames.insert(identifier.lowercased())
+                let components = identifier.lowercased().split(separator: ".")
+                if components.count > 2 { installedNames.insert(String(components[1])) }
+                if let name = info["CFBundleName"] as? String {
+                    installedNames.insert(name.lowercased())
+                }
+            }
+        }
         for category in Category.allCases {
             var result = CategoryScan()
-            let root = home.appendingPathComponent(category.relativePath, isDirectory: true)
-            do {
-                try validateRoot(root)
-                let children = try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-                for child in children {
-                    do {
-                        let measured = try measure(child)
-                        result.bytes = try adding(result.bytes, measured.bytes)
-                        let stamp = measured.entries[child.path]!
-                        // Never empty Trash; Downloads folders/recent files are kept.
-                        let eligible = category != .trash && stamp.kind != S_IFLNK
-                            && (category != .downloads || (stamp.kind == S_IFREG
-                                && Double(stamp.modifiedSeconds) < now.timeIntervalSince1970 - staleAge))
-                        if eligible {
-                            approved[category, default: [:]][child.path] = measured
-                            result.eligibleBytes = try adding(result.eligibleBytes, measured.bytes)
-                            result.items.append(ScanItem(path: child.path, name: child.lastPathComponent,
-                                bytes: measured.bytes, formatted: format(measured.bytes)))
+            for root in roots(for: category) {
+                // Invalid or inaccessible roots never disable other roots/items.
+                guard (try? validateRoot(root)) != nil else { continue }
+                let entries = category == .applications && root.lastPathComponent != "Application Support"
+                    ? applications.filter { $0.path.hasPrefix(root.path + "/") } : children(of: root)
+                for child in entries {
+                    // Diagnostic reports have their own Performance inventory.
+                    if category == .logs && child.lastPathComponent == "DiagnosticReports" { continue }
+                    if category == .applications {
+                        if root.lastPathComponent == "Application Support" {
+                            guard !installedNames.contains(child.lastPathComponent.lowercased()) else { continue }
+                        } else if child.pathExtension.lowercased() != "app" {
+                            continue
                         }
-                    } catch {
-                        result.error = "Scan incomplete: some items could not be read. Cleanup disabled."
                     }
+                    if category == .startup && child.pathExtension.lowercased() != "plist" { continue }
+                    if category == .privacy && !isBrowsingTrace(child, root: root) { continue }
+                    scanEntry(child, root: root, category: category, now: now, result: &result)
                 }
-                if result.error != nil {
-                    approved[category] = nil
-                    result.items = []
-                    result.eligibleBytes = 0
-                }
-            } catch {
-                result.error = "Directory unavailable, redirected, or access denied."
-                approved[category] = nil
             }
             result.formatted = format(result.bytes)
             result.eligibleFormatted = format(result.eligibleBytes)
-            result.canClean = !result.items.isEmpty && result.error == nil
+            result.canClean = !result.items.isEmpty
             result.items.sort { $0.path < $1.path }
             results[category.rawValue] = result
         }
+        // Storage is an overview; items retain their original cleanup category.
+        var storage = CategoryScan()
+        for category in [Category.caches, .logs, .trash, .downloads] {
+            if let scan = results[category.rawValue] {
+                storage.bytes += scan.bytes
+                storage.eligibleBytes += scan.eligibleBytes
+                storage.items.append(contentsOf: scan.items)
+            }
+        }
+        storage.formatted = format(storage.bytes)
+        storage.eligibleFormatted = format(storage.eligibleBytes)
+        storage.canClean = !storage.items.isEmpty
+        results["storage"] = storage
         return ScanData(categories: results)
+    }
+
+    private func roots(for category: Category) -> [URL] {
+        func local(_ path: String) -> URL { home.appendingPathComponent(path, isDirectory: true) }
+        func system(_ path: String) -> URL {
+            let candidate = systemRoot.appendingPathComponent(path, isDirectory: true)
+            // /var is a standard macOS alias for /private/var.
+            return URL(fileURLWithPath: Self.resolvedPath(candidate) ?? candidate.path, isDirectory: true)
+        }
+        switch category {
+        case .caches: return [local("Library/Caches")]
+        case .logs: return [local("Library/Logs")]
+        case .trash: return [local(".Trash")]
+        case .downloads: return [local("Downloads")]
+        case .applications:
+            return [system("Applications"), local("Applications"), local("Library/Application Support")]
+        case .startup:
+            return [local("Library/LaunchAgents"), system("Library/LaunchAgents"), system("Library/LaunchDaemons")]
+        case .performance:
+            return [system("var/log"), local("Library/Logs/DiagnosticReports")]
+        case .privacy:
+            var paths = [local("Library/Safari"), local("Library/Cookies"),
+                         local("Library/Containers/com.apple.Safari/Data/Library/Safari"),
+                         local("Library/Containers/com.apple.Safari/Data/Library/Cookies")]
+            let chrome = local("Library/Application Support/Google/Chrome")
+            for profile in children(of: chrome) where profile.lastPathComponent == "Default"
+                || profile.lastPathComponent.hasPrefix("Profile ") {
+                paths.append(profile)
+                paths.append(profile.appendingPathComponent("Network", isDirectory: true))
+            }
+            return paths
+        }
+    }
+
+    private func children(of root: URL) -> [URL] {
+        do {
+            try validateRoot(root)
+            return try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        } catch {
+            return []
+        }
+    }
+
+    private func applicationURLs(in root: URL) -> [URL] {
+        guard (try? validateRoot(root)) != nil,
+              let enumerator = manager.enumerator(at: root,
+                  includingPropertiesForKeys: nil,
+                  options: [.skipsPackageDescendants],
+                  errorHandler: { _, _ in true }) else { return [] }
+        var applications: [URL] = []
+        for case let url as URL in enumerator {
+            guard let metadata = try? stamp(url) else { continue }
+            if metadata.kind == S_IFLNK {
+                enumerator.skipDescendants()
+                continue
+            }
+            if metadata.kind == S_IFDIR && url.pathExtension.lowercased() == "app" {
+                applications.append(url)
+                enumerator.skipDescendants()
+            }
+        }
+        return applications
+    }
+
+    private func isBrowsingTrace(_ file: URL, root: URL) -> Bool {
+        let name = file.lastPathComponent
+        if root.lastPathComponent == "Cookies" { return name.hasSuffix(".binarycookies") }
+        let names: Set<String> = ["History", "Cookies", "History.db", "History.plist",
+                                  "LastSession.plist", "RecentlyClosedTabs.plist", "WebpageIcons.db",
+                                  "Favicon Cache", "LocalStorage", "Databases"]
+        return names.contains(name) || names.contains(name.replacingOccurrences(of: "-wal", with: ""))
+            || names.contains(name.replacingOccurrences(of: "-shm", with: ""))
+            || names.contains(name.replacingOccurrences(of: "-journal", with: ""))
+    }
+
+    private func scanEntry(_ url: URL, root: URL, category: Category,
+                           now: Date, result: inout CategoryScan) {
+        do {
+            let measured = try measure(url)
+            guard let metadata = measured.entries[url.path] else { return }
+            let nextBytes = try adding(result.bytes, measured.bytes)
+            let eligible = category != .trash && metadata.kind != S_IFLNK
+                && (category != .downloads || (metadata.kind == S_IFREG
+                    && Double(metadata.modifiedSeconds) < now.timeIntervalSince1970 - staleAge))
+            if eligible {
+                let nextEligibleBytes = try adding(result.eligibleBytes, measured.bytes)
+                approved[category, default: [:]][url.path] = ApprovedItem(root: root, measured: measured)
+                let unmatched = category == .applications && root.lastPathComponent == "Application Support"
+                result.items.append(ScanItem(id: "\(category.rawValue):\(url.path)",
+                    category: category.rawValue, path: url.path,
+                    name: unmatched ? "Unmatched support · \(url.lastPathComponent)" : url.lastPathComponent,
+                    bytes: measured.bytes, formatted: format(measured.bytes), canClean: true))
+                result.eligibleBytes = nextEligibleBytes
+            }
+            result.bytes = nextBytes
+        } catch {
+            // A restricted descendant must not hide accessible siblings. Never
+            // approve a partial directory or a damaged/partly unreadable app.
+            guard category != .downloads, url.pathExtension.lowercased() != "app" else { return }
+            for child in children(of: url) {
+                scanEntry(child, root: root, category: category, now: now, result: &result)
+            }
+        }
     }
 
     func cleanup(_ selections: [CleanupSelection]) -> CleanupResult {
@@ -318,7 +442,7 @@ private final class FileWorker: @unchecked Sendable {
         // Consume the approval once, including failed attempts.
         let snapshot = approved
         approved.removeAll()
-        var targets: [(Category, MeasuredItem)] = []
+        var targets: [ApprovedItem] = []
         var selectedPaths = Set<String>()
         for selection in selections {
             guard let category = Category(rawValue: selection.id), category != .trash,
@@ -333,15 +457,22 @@ private final class FileWorker: @unchecked Sendable {
                 return result
             }
             for path in paths where selectedPaths.insert(path).inserted {
-                targets.append((category, items[path]!))
+                targets.append(items[path]!)
             }
         }
 
-        for (category, item) in targets.sorted(by: { $0.1.url.path < $1.1.url.path }) {
+        // Selecting a folder and one of its descendants moves the folder once.
+        let topLevelTargets = targets.filter { candidate in
+            !targets.contains { other in
+                candidate.measured.url.path.hasPrefix(other.measured.url.path + "/")
+            }
+        }
+        for target in topLevelTargets.sorted(by: { $0.measured.url.path < $1.measured.url.path }) {
             do {
-                let root = home.appendingPathComponent(category.relativePath, isDirectory: true)
+                let root = target.root
+                let item = target.measured
                 try validateRoot(root)
-                guard item.url.deletingLastPathComponent().path == root.path,
+                guard item.url.path.hasPrefix(root.path + "/"),
                       Self.resolvedPath(item.url) == item.url.path else {
                     throw FileSafetyError.changed
                 }
@@ -350,7 +481,7 @@ private final class FileWorker: @unchecked Sendable {
                 guard current.entries == item.entries else { throw FileSafetyError.changed }
                 let nextBytes = try adding(result.movedBytes, current.bytes)
                 // The sole mutation API. No permanent deletion or fallback.
-                try FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
+                try trashItem(item.url)
                 result.movedBytes = nextBytes
                 result.movedCount += 1
             } catch {
@@ -390,6 +521,11 @@ private final class FileWorker: @unchecked Sendable {
         let url: URL
         let bytes: UInt64
         let entries: [String: FileStamp]
+    }
+
+    private struct ApprovedItem {
+        let root: URL
+        let measured: MeasuredItem
     }
 
     private func stamp(_ url: URL) throws -> FileStamp {

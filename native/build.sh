@@ -5,7 +5,14 @@ NATIVE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(dirname "$NATIVE_DIR")
 APP_DIR="$NATIVE_DIR/build/macwipe.app"
 
+case "${1:-}" in
+  ""|--launch) ;;
+  *) printf 'Usage: %s [--launch]\n' "$0" >&2; exit 2 ;;
+esac
+
 plutil -lint "$NATIVE_DIR/Info.plist"
+plutil -lint "$NATIVE_DIR/macwipe.entitlements"
+cmp "$NATIVE_DIR/Web/macwipe-bridge.js" "$PROJECT_DIR/website/macwipe-bridge.js"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources/Web"
 swiftc -target "$(uname -m)-apple-macosx13.0" \
   -framework Cocoa -framework WebKit \
@@ -14,4 +21,9 @@ swiftc -target "$(uname -m)-apple-macosx13.0" \
 cp "$NATIVE_DIR/Info.plist" "$APP_DIR/Contents/Info.plist"
 cp -R "$PROJECT_DIR/website/." "$APP_DIR/Contents/Resources/Web/"
 cp "$NATIVE_DIR/Web/macwipe-bridge.js" "$APP_DIR/Contents/Resources/Web/macwipe-bridge.js"
+codesign --force --sign - --entitlements "$NATIVE_DIR/macwipe.entitlements" "$APP_DIR"
+codesign --verify --deep --strict "$APP_DIR"
 printf 'Built %s\n' "$APP_DIR"
+if [ "${1:-}" = --launch ]; then
+  open -n "$APP_DIR"
+fi
