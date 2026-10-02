@@ -11,3 +11,4 @@ reports/
 .vercel/
 /native/*.app/
 /native/build/
+/native/release/

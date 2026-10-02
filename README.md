@@ -9,7 +9,7 @@ build step, account, or runtime dependencies.
 **Browser demo uses example data only:** it cannot scan your Mac or delete files.
 Simulate cleanup clears selections. Chat messages stay in browser memory;
 there are no server requests, analytics, or saved chat history.
-The native helper download is not available yet.
+The landing page includes a native macOS download alongside the browser demo.
 
 ## Preview
 
@@ -91,8 +91,25 @@ Moving files to Trash does not free disk space. The completion dialog reports
 space moved separately from actual disk space freed, then the native manager
 rescans. Filesystem permissions can prevent scanning or cleanup.
 
-See [native/README.md](native/README.md) for source and build details. No signed
-or notarized native download is provided.
+See [native/README.md](native/README.md) for source and build details. The ZIP
+uses an ad-hoc development signature and is not notarized; macOS may block
+launching a downloaded build.
+
+## Package the macOS download
+
+On macOS with the Xcode command-line tools installed, run:
+
+```sh
+./native/package.sh
+```
+
+The script rebuilds a universal app for Intel and Apple silicon, stages a clean
+release copy, and verifies its signature and both architectures after unzipping.
+It produces `native/release/macwipe-macos.zip` and copies the same ZIP to
+`website/downloads/macwipe-macos.zip`, the landing page's download target.
+Re-run it after changing Swift or website assets. Include the website ZIP when
+publishing `website/`; native release staging stays ignored by Git. Packaging
+does not launch the app or perform cleanup.
 
 ## Python manager
 

@@ -29,6 +29,7 @@ input {
   font: inherit;
 }
 button,
+.download-control,
 .demo-link {
   border-radius: 0;
   cursor: pointer;
@@ -126,6 +127,11 @@ h1 {
 .download-control {
   background: var(--status);
   color: var(--ink);
+  text-decoration: none;
+}
+.download-note {
+  margin: 10px 0 0;
+  font-size: 11px;
 }
 .demo-link {
   margin-top: 12px;
@@ -166,6 +172,7 @@ h1 {
   background: var(--status);
 }
 .close-control:active,
+.download-control:active,
 .demo-link:active,
 .question-row:active {
   transform: translate(1px, 1px);

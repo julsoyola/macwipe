@@ -47,7 +47,14 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
   });
   await page.goto(base + "index.html");
   await page.emulateMedia({ reducedMotion: "reduce" });
-  assert.equal(await page.locator(".download-control").isDisabled(), true);
+  assert.equal(
+    await page.locator(".download-control").getAttribute("href"),
+    "downloads/macwipe-macos.zip",
+  );
+  assert.equal(
+    await page.locator(".download-control").getAttribute("download"),
+    "macwipe-macos.zip",
+  );
   assert.equal(
     await page.locator(".demo-link").getAttribute("href"),
     "dashboard.html",

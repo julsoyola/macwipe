@@ -39,7 +39,12 @@
           </svg>
           <h1 id="brand-heading">macwipe</h1>
           <p class="tagline">A quiet, simple scrubber for your Mac.</p>
-          <button class="download-control" type="button" disabled>
+          <a
+            class="download-control primary-btn"
+            href="downloads/macwipe-macos.zip"
+            download="macwipe-macos.zip"
+            aria-describedby="download-details"
+          >
             <img
               class="pixel-icon"
               src="assets/disk.svg"
@@ -47,8 +52,12 @@
               height="18"
               alt=""
             />
-            Download helper coming soon
-          </button>
+            Download for macOS
+          </a>
+          <p class="download-note" id="download-details">
+            macOS 13+ · Intel &amp; Apple silicon<br />
+            Development build · Not notarized
+          </p>
           <a class="demo-link primary-btn" href="dashboard.html"
             >Launch Web Dashboard Demo →</a
           >

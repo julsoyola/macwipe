@@ -12,6 +12,8 @@ the independent Python manager stays in `../mac_scrubber/`.
   `../website/macwipe-bridge.js` for explicit HTML script loading.
 - `build.sh`: compiles Swift, copies website resources, signs with
   `macwipe.entitlements`, and verifies the resulting bundle.
+- `package.sh`: builds a universal app, verifies the ZIP, and copies it to the
+  website's download directory. Run `./native/package.sh` from the repo root.
 
 From the repository root, with the Xcode command-line tools installed:
 
@@ -23,6 +25,9 @@ Builds go to `native/build/macwipe.app`, which is ignored by Git. The build
 does not launch the app, scan files, or perform cleanup. Launching the app
 starts a local scan. The build uses an ad-hoc development signature with the
 entitlements in this directory; it is not signed for distribution or notarized.
+Use `./native/build.sh --universal` to build both Intel and Apple silicon
+architectures without packaging. App resources exclude `website/downloads/`
+to keep release ZIPs out of the bundled website.
 
 | Tab | Local scan paths |
 | --- | --- |
