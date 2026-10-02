@@ -26,7 +26,11 @@
       )
     : Object.fromEntries(Object.entries(MacwipeData).map(([key, category]) => [
         key,
-        { ...category, items: category.items.map((item) => ({ ...item, ...itemMetadata(item) })) },
+        { ...category, items: category.items.map((item, originalScanIndex) => ({
+          ...item, ...itemMetadata(item), originalScanIndex,
+          bytes: !item.info && Number.isFinite(item.mb) && item.mb >= 0
+            ? item.mb * 1_000_000 : null,
+        })) },
       ]));
 
   const { formatMB, createChat } = MacwipeUI;
@@ -36,6 +40,7 @@
   const itemById = new Map(allItems.map((item) => [item.id, item]));
   const selected = new Set();
   const cachedRows = new Map();
+  const categorySort = new Map();
   const checkboxById = new Map();
   let currentCategory = null;
   let selectedMB = 0;
@@ -59,6 +64,7 @@
   const caption = document.querySelector("#list-caption");
   const selectionStatus = document.querySelector("#selection-status");
   const selectAllButton = document.querySelector("#btn-select-all");
+  const sortButton = document.querySelector("#btn-sort-size");
   const reviewButton = document.querySelector("#btn-review-selected");
   const previewButton = document.querySelector("#btn-preview-scan");
   const reviewDialog = document.querySelector("#review-dialog");
@@ -389,12 +395,28 @@
     const rows = cachedRows.get(key);
     const items = [...new Map((category.items || []).map((item) => [item.id, item])).values()];
     const fragment = document.createDocumentFragment();
+    const sort = categorySort.get(key) || "none";
+    sortButton.closest("th").setAttribute("aria-sort", sort);
+    const sortLabel = sort === "descending" ? "Largest first"
+      : sort === "ascending" ? "Smallest first" : "Original scan order";
+    sortButton.setAttribute("aria-label", `Size / Info: ${sortLabel}. Activate to change order.`);
+    sortButton.querySelector("span").textContent = sort === "descending" ? "▼"
+      : sort === "ascending" ? "▲" : "";
     const sections = [
       ["temporary", "Temporary files", "Temporary data. Review before removing; apps may recreate it."],
       ["review-carefully", "Review carefully", "These items may contain important data or affect app behavior."],
     ];
     for (const [classification, title, explanation] of sections) {
       const sectionItems = items.filter((item) => item.reviewClassification === classification);
+      sectionItems.sort((a, b) => {
+        if (sort === "none") return a.originalScanIndex - b.originalScanIndex;
+        const aKnown = Number.isFinite(a.bytes);
+        const bKnown = Number.isFinite(b.bytes);
+        if (aKnown !== bKnown) return aKnown ? -1 : 1;
+        const difference = aKnown ? a.bytes - b.bytes : 0;
+        return (sort === "descending" ? -difference : difference)
+          || a.originalScanIndex - b.originalScanIndex;
+      });
       if (!sectionItems.length) continue;
       const section = document.createElement("tr");
       section.className = "risk-section";
@@ -475,6 +497,12 @@
   }
 
   const actions = {
+    "sort-size": () => {
+      const current = categorySort.get(currentCategory) || "none";
+      categorySort.set(currentCategory, current === "none" ? "descending"
+        : current === "descending" ? "ascending" : "none");
+      renderCategoryList(currentCategory);
+    },
     "scroll-up": () => scrollFiles(-1),
     "scroll-down": () => scrollFiles(1),
     preview: () => {
@@ -569,14 +597,15 @@
         category.available = !!source;
         category.error = source?.error;
         category.skippedPaths = source?.skippedPaths || 0;
-        category.items = (source?.items || []).map((file) => ({
+        category.items = (source?.items || []).map((file, originalScanIndex) => ({
           ...itemMetadata(file),
+          originalScanIndex,
           id: file.id,
           category: file.category,
           path: file.path,
           name: file.name,
           mb: file.bytes / 1_000_000,
-          bytes: file.bytes,
+          bytes: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes : null,
           info: file.formatted || formatMB(file.bytes / 1_000_000),
           details: `${file.path}. ${payload.sizeMeaning || ""}`,
           canClean: file.canClean === true,

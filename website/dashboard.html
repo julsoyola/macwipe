@@ -9,11 +9,11 @@
     />
     <title>macwipe · Home · Demo</title>
     <link rel="stylesheet" href="styles/theme.css" />
-    <link rel="stylesheet" href="styles/dashboard.css?v=task15" />
+    <link rel="stylesheet" href="styles/dashboard.css?v=task16" />
     <script src="scripts/ui.js" defer></script>
     <script src="scripts/demo-data.js?v=task12" defer></script>
     <script src="macwipe-bridge.js" defer></script>
-    <script src="scripts/dashboard.js?v=task15" defer></script>
+    <script src="scripts/dashboard.js?v=task16" defer></script>
   </head>
   <body class="dashboard-body">
     <a class="skip-link" href="#content-pane">Skip to content</a>
@@ -282,7 +282,11 @@
                   <tr>
                     <th scope="col">Select</th>
                     <th scope="col">Name</th>
-                    <th scope="col">Size / Info</th>
+                    <th scope="col" aria-sort="none">
+                      <button type="button" id="btn-sort-size" data-action="sort-size">
+                        Size / Info <span aria-hidden="true"></span>
+                      </button>
+                    </th>
                     <th scope="col">Details</th>
                   </tr>
                 </thead>

@@ -319,7 +319,7 @@
 .dashboard-body [data-message="answer"] {
   white-space: pre-line;
 }
-.item-list .risk-section td {
+.item-list tr.risk-section td {
   text-align: left;
   white-space: normal;
   background: var(--panel);
@@ -340,6 +340,15 @@
 }
 .item-list th:nth-child(3) {
   width: 125px;
+}
+#btn-sort-size {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .item-list th:last-child {
   width: 96px;
