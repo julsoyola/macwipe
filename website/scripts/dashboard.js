@@ -30,7 +30,16 @@
   // Resolve persistent DOM nodes once; event handlers reuse these references.
   const tableBody = document.querySelector("#item-table-body");
   const fileList = document.querySelector("#file-list");
-  const navButtons = document.querySelectorAll("[data-category]");
+  const navButtons = document.querySelectorAll(
+    "nav [data-category], nav [data-view]",
+  );
+  const homeView = document.querySelector("#home-view");
+  const categoryControls = document.querySelectorAll("[data-category-controls]");
+  const categoryTitles = {
+    applications: "Apps",
+    performance: "Logs",
+    privacy: "Browser data",
+  };
   const heading = document.querySelector("#dashboard-heading");
   const description = document.querySelector("#category-description");
   const caption = document.querySelector("#list-caption");
@@ -120,18 +129,31 @@
   }
 
   function switchCategory(key) {
-    if (key === currentCategory || !Object.hasOwn(categories, key)) return;
+    const isHome = key === "home";
+    if (key === currentCategory || (!isHome && !Object.hasOwn(categories, key)))
+      return;
     currentCategory = key;
-    const category = categories[key];
-    document.title = `macwipe · ${category.title} · ${isNative ? "Native" : "Demo"}`;
-    heading.textContent = category.title;
+    const category = isHome
+      ? { title: "Home", description: "Review storage and files on your Mac." }
+      : categories[key];
+    const title = categoryTitles[key] || category.title;
+    document.title = `macwipe · ${title} · ${isNative ? "Native" : "Demo"}`;
+    heading.textContent = title;
     description.textContent = category.description;
-    caption.textContent = `${category.title} items`;
+    caption.textContent = `${title} items`;
     navButtons.forEach((button) => {
-      if (button.dataset.category === key)
+      if ((button.dataset.view || button.dataset.category) === key)
         button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     });
+    homeView.hidden = !isHome;
+    categoryControls.forEach((control) => {
+      control.hidden = isHome;
+    });
+    if (isHome) {
+      updateSelection();
+      return;
+    }
 
     if (!cachedRows.has(key))
       cachedRows.set(key, (category.items || []).map(createRow));
@@ -233,7 +255,8 @@
   document.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button || button.disabled) return;
-    if (button.dataset.category) switchCategory(button.dataset.category);
+    if (button.dataset.view) switchCategory(button.dataset.view);
+    else if (button.dataset.category) switchCategory(button.dataset.category);
     else if (button.dataset.details) {
       const item = itemById.get(button.dataset.details);
       if (item) openDetails(`Tell me about ${item.name}.`, item.details);
@@ -292,7 +315,7 @@
       checkboxById.clear();
       const key = currentCategory;
       currentCategory = null;
-      switchCategory(key || "storage");
+      switchCategory(key || "home");
 
       previewNote.textContent = "Scan complete. Review files before cleanup.";
       if (reviewDialog.open && !confirmButton.hidden) reviewDialog.close();
@@ -316,6 +339,6 @@
     });
   }
 
-  switchCategory("storage");
+  switchCategory("home");
   if (isNative && window.macwipeUI?.scan) window.macwipeUI.scan();
 })();
