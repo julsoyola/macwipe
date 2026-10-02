@@ -9,11 +9,11 @@
     />
     <title>macwipe · Home · Demo</title>
     <link rel="stylesheet" href="styles/theme.css" />
-    <link rel="stylesheet" href="styles/dashboard.css?v=protected-inventory" />
+    <link rel="stylesheet" href="styles/dashboard.css?v=compact-home" />
     <script src="scripts/ui.js" defer></script>
     <script src="scripts/demo-data.js?v=protected-inventory" defer></script>
     <script src="macwipe-bridge.js?v=task19" defer></script>
-    <script src="scripts/dashboard.js?v=protected-inventory" defer></script>
+    <script src="scripts/dashboard.js?v=compact-home" defer></script>
   </head>
   <body class="dashboard-body">
     <a class="skip-link" href="#content-pane">Skip to content</a>
@@ -117,6 +117,7 @@
               <p id="category-description">
                 See your space. Choose what stays.
               </p>
+              <button class="question-row" id="btn-home-rescan" data-action="preview" type="button" data-home-control>Scan</button>
             </header>
             <div id="home-view">
               <section class="home-panel" aria-labelledby="storage-heading">
@@ -144,10 +145,10 @@
                     <h3 id="storage-volume"></h3>
                     <p id="storage-usage"></p>
                     <ul id="storage-legend" class="storage-legend"></ul>
-                    <p id="storage-size-note" hidden>
+                    <details class="storage-disclosure"><summary>Details</summary><p id="storage-size-note" hidden>
                       Available space is reported by macOS. Cleanup candidates
                       use logical file sizes, not guaranteed space freed.
-                    </p>
+                    </p></details>
                   </div>
                 </div>
               </section>
@@ -206,14 +207,7 @@
                   Nothing is removed automatically. Files moved to Trash still occupy space.
                 </p>
               </section>
-              <button
-                class="question-row"
-                id="btn-home-rescan"
-                data-action="preview"
-                type="button"
-              >
-                Scan
-              </button>
+              <p class="home-system-status" role="status">System status: Not available yet.</p>
             </div>
             <div
               class="toolbar"

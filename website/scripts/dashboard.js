@@ -2,6 +2,7 @@
   "use strict";
 
   const isNative = !!window.webkit?.messageHandlers?.macwipeBridge;
+  document.body.classList.toggle("native-mode", isNative);
 
   function itemMetadata(item) {
     return {
@@ -201,6 +202,7 @@
     const overview = document.querySelector("#storage-overview");
     const unavailable = document.querySelector("#storage-unavailable");
     document.querySelector("#storage-size-note").hidden = !isNative;
+    document.querySelector(".storage-disclosure").hidden = !isNative;
     if (storage && (
       !Number.isFinite(storage.totalBytes) || storage.totalBytes <= 0 ||
       !Number.isFinite(storage.availableBytes) || storage.availableBytes < 0 ||
@@ -399,6 +401,8 @@
     const isHome = key === "home";
     if (!isHome && !Object.hasOwn(categories, key)) return;
     currentCategory = key;
+    document.body.dataset.currentView = key;
+    document.querySelectorAll("[data-home-control]").forEach((control) => { control.hidden = !isHome; });
     const category = isHome
       ? { title: "Home", description: "See your space. Choose what stays." }
       : categories[key];

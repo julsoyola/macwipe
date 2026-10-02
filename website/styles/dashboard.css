@@ -11,6 +11,51 @@
 .dashboard-page {
   padding: 40px 24px;
 }
+.native-mode .dashboard-page { padding: 0; min-height: 100vh; }
+.native-mode .dashboard { width: 100%; margin: 0; }
+.native-mode .sidebar { padding-top: 14px; padding-bottom: 14px; }
+.native-mode .disk-icon { margin-bottom: 12px; }
+.native-mode[data-current-view="home"] .content-pane { padding: 12px 16px; }
+.native-mode[data-current-view="home"] .section-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  margin-bottom: 10px;
+}
+.native-mode[data-current-view="home"] .section-header h1 { font-size: 26px; margin: 0; }
+.native-mode[data-current-view="home"] .section-header p { margin: 0; font-size: 13px; }
+.native-mode #btn-home-rescan { grid-column: 2; grid-row: 1 / span 2; margin: 0; }
+.native-mode .home-panel { padding: 14px; }
+.native-mode .home-panel:has(#storage-overview:not([hidden])) {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 4px 16px;
+}
+.native-mode .home-panel h2 { grid-column: 2; margin: 0; font-size: 18px; }
+.native-mode #storage-overview:not([hidden]) { display: contents; }
+.native-mode .storage-ring { grid-row: 1 / span 2; width: 130px; height: 130px; }
+.native-mode .storage-ring svg { width: 130px; height: 130px; }
+.native-mode .storage-ring-center { inset: 14px; width: 102px; height: 102px; font-size: 13px; text-align: center; }
+.native-mode .storage-ring-center strong { font-size: 20px; }
+.native-mode .storage-ring-center small { font-size: 13px; margin-top: 2px; }
+.native-mode .storage-summary { grid-column: 2; }
+.native-mode .storage-summary h3 { font-size: 18px; margin-bottom: 4px; }
+.native-mode .storage-summary p, .storage-disclosure { font-size: 13px; }
+.native-mode .storage-legend { margin-top: 6px; gap: 4px 12px; font-size: 13px; }
+.native-mode .home-recommendations { margin-top: 12px; }
+.native-mode .home-recommendations h2 { font-size: 18px; margin-bottom: 6px; }
+.native-mode .recommendation-card { padding: 10px 12px; gap: 4px; display: grid; grid-template-columns: 1fr auto; }
+.native-mode .recommendation-card h3 { font-size: 16px; grid-column: 1 / -1; }
+.native-mode .recommendation-card p { font-size: 13px; line-height: 1.25; grid-column: 1 / -1; }
+.native-mode .recommendation-card [data-recommendation-size] { grid-column: 1; margin: 0; align-self: center; }
+.native-mode .recommendation-card button { grid-column: 2; padding: 4px 8px; font-size: 13px; }
+.native-mode .home-cleanup-note { margin: 8px 0; font-size: 13px; }
+.home-system-status { margin: 8px 0 0; font-size: 13px; }
+@media (max-width: 749px) {
+  .native-mode .home-panel:has(#storage-overview:not([hidden])) { display: block; }
+  .native-mode #storage-overview:not([hidden]) { display: flex; }
+  .native-mode[data-current-view="home"] .section-header { display: block; }
+}
 .dashboard {
   width: min(1000px, 100%);
   margin: auto;
