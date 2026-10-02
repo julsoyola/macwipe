@@ -79,7 +79,7 @@
   let detailsItem = null;
   let demoBreadcrumbs = [];
   let selectedMB = 0;
-  let selectedSizeLabel = formatMB(0);
+  let selectedSizeLabel = "0 bytes";
   let hasCompletedScan = false;
 
   // Resolve persistent DOM nodes once; event handlers reuse these references.
@@ -123,13 +123,15 @@
 
   function renderHomeRecommendations(state = "ready") {
     document.querySelectorAll("[data-inventory-summary]").forEach((summary) => {
-      summary.textContent = inventorySummary(categories[summary.dataset.inventorySummary]);
+      const key = summary.dataset.inventorySummary;
+      summary.textContent = `${categoryTitles[key] || key}: ${inventorySummary(categories[key])}`;
     });
     document.querySelectorAll("[data-recommendation]").forEach((card) => {
       const key = card.dataset.recommendation;
       const count = card.querySelector("[data-recommendation-count]");
       const size = card.querySelector("[data-recommendation-size]");
       const button = card.querySelector("button");
+      card.hidden = false;
       if (state !== "ready" && state !== "partial") {
         if (state === "loading") {
           count.textContent = isNative
@@ -149,6 +151,7 @@
         count.textContent = "Scan cancelled. Rescan before cleanup."; size.textContent = ""; button.disabled = true; return;
       }
       if (isNative && !category.available) {
+        card.hidden = true;
         count.textContent = "Not scanned.";
         size.textContent = "";
         button.disabled = true;
@@ -190,7 +193,9 @@
         : !items.length && partial ? "Size unavailable"
           : `${formatted} available for review${known.length < items.length ? " · Some sizes unavailable" : ""}`;
       button.disabled = items.length === 0;
+      card.hidden = items.length === 0;
     });
+    document.querySelector("#recommendations-heading").hidden = ![...document.querySelectorAll("[data-recommendation]")].some((card) => !card.hidden);
   }
 
   function setScanState(state, message) {
@@ -318,12 +323,13 @@
   }
 
   function updateSelection() {
-    const count = selected.size;
-    const items = [...selected].map((id) => itemById.get(id));
+    const items = reviewItems();
+    const count = items.length;
     const known = items.filter((item) => Number.isFinite(item.bytes));
-    selectedMB = known.reduce((sum, item) => sum + item.bytes, 0) / 1_000_000;
+    const selectedBytes = known.reduce((sum, item) => sum + item.bytes, 0);
+    selectedMB = selectedBytes / 1_000_000;
     selectedSizeLabel = count && !known.length ? "Size unavailable"
-      : `${formatMB(selectedMB)}${known.length < count ? " · Some sizes unavailable" : ""}`;
+      : `${formatLogical(selectedBytes)}${known.length < count ? " · Some sizes unavailable" : ""}`;
     const summary = `Selected: ${count} ${count === 1 ? "item" : "items"} · ${selectedSizeLabel}`;
     if (selectionStatus.textContent !== summary)
       selectionStatus.textContent = summary;
@@ -504,7 +510,7 @@
     const eligible = isNative ? category.eligibleBytes : category.items.filter((item) => item.canClean !== false)
       .reduce((sum, item) => sum + (item.bytes || 0), 0);
     document.querySelector("#category-summary").textContent = key === "explorer" ? inventorySummary(category)
-      : `${inventorySummary(category)} · Eligible candidates: ${Number.isFinite(eligible) ? eligible === 0 ? "0 bytes" : formatMB(eligible / 1_000_000) : "Unavailable"}`;
+      : `${inventorySummary(category)} · Eligible candidates: ${Number.isFinite(eligible) ? formatLogical(eligible) : "Unavailable"}`;
     const skipped = document.querySelector("#category-skipped");
     skipped.hidden = !(category.skippedPaths > 0);
     skipped.querySelector("ul").replaceChildren(...(category.skippedLocations || []).map((path) => {
@@ -590,15 +596,25 @@
 
   function review() {
     if (!selected.size) return;
+    const items = reviewItems();
+    document.querySelector("#cleanup-failure-heading").hidden = true;
+    document.querySelector("#cleanup-failures").hidden = true;
     if (isNative) {
-      reviewIntro.textContent = "Selected files for cleanup:";
-      reviewNotice.textContent =
-        "Selected files will be moved to Trash. Applications and support folders may contain personal data. Removing startup files does not stop running services. Close affected apps and browsers first.";
+      reviewIntro.textContent = `${items.length} selected ${items.length === 1 ? "item" : "items"} for cleanup:`;
+      const kinds = new Set(items.map((item) => item.kind));
+      reviewNotice.textContent = [
+        "Selected items will move to Trash. Selected folders include their contents. Trash still occupies space.",
+        kinds.has("cache") ? "Close affected apps first. Cache files may be recreated." : "",
+        kinds.has("application") ? "Moving an app to Trash does not run its vendor uninstaller." : "",
+        kinds.has("unmatched-support") ? "Support folders may contain settings, mods, or personal data. No matching installed app does not prove they are unused." : "",
+        kinds.has("older-download") ? "Keep any downloaded files you still need." : "",
+        kinds.has("browser-data") ? "Close browsers first. Removing browser data may affect history, sessions, or sign-in state." : "",
+        kinds.has("log") ? "Removing logs discards troubleshooting information." : "",
+      ].filter(Boolean).join(" ");
       confirmButton.hidden = false;
       confirmButton.style.display = "";
       confirmButton.textContent = "Move to Trash";
     }
-    const items = allItems.filter((item) => selected.has(item.id));
     const fragment = document.createDocumentFragment();
     items.forEach((item) => {
       const entry = document.createElement("li");
@@ -608,6 +624,20 @@
     reviewList.replaceChildren(fragment);
     reviewTotal.textContent = selectedSizeLabel;
     reviewDialog.showModal();
+  }
+
+  function reviewItems() {
+    const paths = new Set();
+    const items = allItems.filter((item) => selected.has(item.id)).filter((item) => {
+      if (!item.path) return true;
+      if (paths.has(item.path)) return false;
+      paths.add(item.path); return true;
+    });
+    return items.filter((item) => !item.path || !items.some((parent) => parent.id !== item.id
+      && parent.path && item.path.startsWith(parent.path + "/")));
+  }
+  function formatLogical(bytes) {
+    return bytes < 1_000_000 ? `${bytes.toLocaleString("en-US")} bytes` : formatMB(bytes / 1_000_000);
   }
 
   function scrollFiles(direction) {
@@ -771,7 +801,7 @@
         ...file, id: file.id, category: "explorer", kind: "storage-inventory", reviewClassification: "review-carefully",
         canClean: false, bulkSelectionEligible: false, homeRecommendationEligible: false,
         bytes: Number.isFinite(file.bytes) ? file.bytes : null, mb: Number.isFinite(file.bytes) ? file.bytes / 1_000_000 : null,
-        info: Number.isFinite(file.bytes) ? `${formatMB(file.bytes / 1_000_000)} · ${file.status || "Example"}` : "Size unavailable",
+        info: Number.isFinite(file.bytes) ? `${formatLogical(file.bytes)} · ${file.status || "Example"}` : "Size unavailable",
         originalScanIndex,
       })) });
     cachedRows.delete("explorer");
@@ -925,7 +955,7 @@
           mb: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes / 1_000_000 : null,
           bytes: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes : null,
           info: Number.isFinite(file.bytes) && file.bytes >= 0
-            ? file.formatted || formatMB(file.bytes / 1_000_000) : "Size unavailable",
+            ? file.formatted || formatLogical(file.bytes) : "Size unavailable",
           details: `${file.path}. ${payload.sizeMeaning || ""}`,
           canClean: file.canClean === true,
         }));
@@ -982,10 +1012,19 @@
 
     nativeUI.onCleanupComplete = function (freedMB, result = {}) {
       if (onCleanupComplete) onCleanupComplete.call(this, freedMB, result);
-      reviewIntro.textContent = "Cleanup finished. Logical size moved to Trash:";
-      reviewList.replaceChildren();
+      reviewIntro.textContent = `Cleanup finished. ${result.movedCount || 0} ${result.movedCount === 1 ? "item" : "items"} moved to Trash. Logical size moved:`;
+      reviewList.replaceChildren(...(result.movedPaths || []).map((path) => {
+        const row = document.createElement("li"); row.textContent = `Moved: ${path.split("/").at(-1)}`; return row;
+      }));
+      const failures = document.querySelector("#cleanup-failures");
+      failures.replaceChildren(...(result.failures || []).map((failure) => {
+        const row = document.createElement("li"); row.textContent = `${failure.path.split("/").at(-1)}: ${failure.message}`; return row;
+      }));
+      failures.hidden = !(result.failures?.length);
+      document.querySelector("#cleanup-failure-heading").hidden = failures.hidden;
       const movedMB = Number.isFinite(result.movedBytes) ? result.movedBytes / 1_000_000 : freedMB;
-      reviewTotal.textContent = Number.isFinite(movedMB) ? formatMB(movedMB) : "Size unavailable";
+      reviewTotal.textContent = Number.isFinite(result.movedBytes) ? formatLogical(result.movedBytes)
+        : Number.isFinite(movedMB) ? formatLogical(movedMB * 1_000_000) : "Size unavailable";
       reviewNotice.textContent = "Available-space change has not been measured. Files in Trash still occupy space.";
       confirmButton.hidden = true;
       confirmButton.style.display = "none";

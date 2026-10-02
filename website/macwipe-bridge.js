@@ -206,7 +206,9 @@
       setPending("requestScan");
       const movedMB = Number.isFinite(freedMB) ? Math.max(0, freedMB) : 0;
       const errors = Array.isArray(result.errors) ? result.errors : [];
-      showStatus(`Moved ${movedMB.toFixed(1)} MB to Trash. Available-space change has not been measured.`
+      const amount = Number.isFinite(result.movedBytes) && result.movedBytes < 1_000_000
+        ? `${result.movedBytes.toLocaleString("en-US")} bytes` : `${movedMB.toFixed(1)} MB`;
+      showStatus(`Moved ${amount} to Trash. Available-space change has not been measured.`
         + (errors.length ? ` ${errors.length} item(s) could not be moved.` : ""));
       emit("cleanup", { ...result, movedMB, diskFreedMB: 0, errors });
     },

@@ -521,8 +521,12 @@ private struct CleanupResult: Encodable, Sendable {
     var movedBytes: UInt64 = 0
     var movedCount = 0
     var errors: [String] = []
+    var movedPaths: [String] = []
+    var failures: [CleanupFailure] = []
     let diskFreedMB = 0
 }
+
+private struct CleanupFailure: Encodable, Sendable { let path: String; let message: String }
 
 // Confined to fileQueue. Sendable only permits passing its reference to that queue.
 private final class FileWorker: @unchecked Sendable {
@@ -879,8 +883,11 @@ private final class FileWorker: @unchecked Sendable {
                 try trashItem(item.url)
                 result.movedBytes = nextBytes
                 result.movedCount += 1
+                result.movedPaths.append(item.url.path)
             } catch {
-                result.errors.append("An item changed, became unreadable, or could not be moved to Trash. Scan again.")
+                let message = "An item changed, became unreadable, or could not be moved to Trash. Scan again."
+                result.errors.append(message)
+                result.failures.append(CleanupFailure(path: target.measured.url.path, message: message))
             }
         }
         return result
@@ -1005,7 +1012,8 @@ private final class FileWorker: @unchecked Sendable {
     }
 
     private func format(_ bytes: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .decimal)
+        if bytes == 0 { return "0 bytes" }
+        return ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .decimal)
     }
 }
 

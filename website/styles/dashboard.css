@@ -52,6 +52,8 @@
 .native-mode .storage-summary p, .storage-disclosure { font-size: 13px; }
 .native-mode .storage-legend { margin-top: 6px; gap: 4px 12px; font-size: 13px; }
 .native-mode .home-recommendations { margin-top: 12px; }
+.home-inventory-overview { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin: 8px 0; }
+.native-mode .home-inventory-overview + .home-recommendations { margin-top: 8px; }
 .native-mode .home-recommendations h2 { font-size: 18px; margin-bottom: 6px; }
 .native-mode .recommendation-card { padding: 10px 12px; gap: 4px; display: grid; grid-template-columns: 1fr auto; }
 .native-mode .recommendation-card h3 { font-size: 16px; grid-column: 1 / -1; }

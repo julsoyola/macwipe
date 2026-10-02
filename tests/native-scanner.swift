@@ -524,7 +524,24 @@ private func runCancellationTests() throws {
     print("PASS: CPU aggregate percentages, first sample, zero/failed/invalid deltas, rollover, one timer, stop and fresh resume; tick source mocked.")
 }
 
+private func runCleanupReportTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("report-rule/home")
+    _ = try writeFixture("Library/Logs/good", under: home)
+    _ = try writeFixture("Library/Logs/bad", under: home)
+    let worker = FileWorker(home: home, systemRoot: nativeTestSystem, trashItem: {
+        if $0.lastPathComponent == "bad" { throw FileSafetyError.unreadable }
+    })
+    let scan = worker.scan(scope: [.logs])
+    let result = worker.cleanup(try selections([("logs", scan.categories["logs"]!.items.map(\.path))]))
+    precondition(result.movedCount == 1 && result.movedBytes == 3 && result.errors.count == 1)
+    precondition(result.movedPaths.count == 1 && result.movedPaths[0].hasSuffix("/good"))
+    precondition(result.failures.count == 1 && result.failures[0].path.hasSuffix("/bad"))
+    precondition(result.diskFreedMB == 0)
+    print("PASS: mixed Trash success/failure outcomes, moved names/count/logical bytes, separate failure paths, and no space-freed claim; all mutations mocked.")
+}
+
 try runScannerTests()
+try runCleanupReportTests()
 MainActor.assumeIsolated { runCPUTests() }
 try runCancellationTests()
 try runScopedScanTests()

@@ -157,6 +157,7 @@
                   </div>
                 </div>
               </section>
+              <p class="home-inventory-overview"><span data-inventory-summary="downloads"></span><span data-inventory-summary="caches"></span></p>
               <section
                 class="home-recommendations"
                 aria-labelledby="recommendations-heading"
@@ -171,7 +172,6 @@
                       <img src="assets/downloads.svg" width="18" height="18" alt="" />
                       Downloads
                     </h3>
-                    <p data-inventory-summary="downloads"></p>
                     <p data-recommendation-count>
                       Recommendations are not available yet.
                     </p>
@@ -194,7 +194,6 @@
                       <img src="assets/caches.svg" width="18" height="18" alt="" />
                       App caches
                     </h3>
-                    <p data-inventory-summary="caches"></p>
                     <p data-recommendation-count>
                       Recommendations are not available yet.
                     </p>
@@ -317,7 +316,7 @@
             </div>
             <footer class="bottom-bar" data-category-controls hidden>
               <span id="selection-status" role="status"
-                >Selected: 0 items · 0 MB</span
+                >Selected: 0 items · 0 bytes</span
               >
               <button
                 class="question-row primary-btn"
@@ -390,11 +389,13 @@
       <div class="dialog-body">
         <p>Selected items for simulated cleanup:</p>
         <ul id="review-items-list" class="review-list"></ul>
-        <p><strong>Total:</strong> <span id="review-total-size">0 MB</span></p>
+        <p><strong>Total:</strong> <span id="review-total-size">0 bytes</span></p>
         <p id="review-notice" class="demo-notice-box">
           Demo only. Simulation clears your selections. No files or settings are
           changed.
         </p>
+        <p id="cleanup-failure-heading" hidden>Could not move:</p>
+        <ul id="cleanup-failures" class="review-list" hidden></ul>
         <div class="dialog-actions">
           <button class="question-row" type="button" data-close>Back</button>
           <button
