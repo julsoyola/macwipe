@@ -12,12 +12,12 @@ The native helper download is not available yet.
 
 <table>
   <tr>
-    <td><a href="docs/screenshots/landing.png"><img src="docs/screenshots/landing.png" width="320" alt="macwipe landing page"></a><br>Landing</td>
-    <td><a href="docs/screenshots/chat.png"><img src="docs/screenshots/chat.png" width="320" alt="mac-chat with a local message"></a><br>Local chat</td>
+    <td><a href="docs/screenshots/landing.png"><img src="docs/screenshots/landing.png" width="320" alt="macwipe landing page"></a><br></td>
+    <td><a href="docs/screenshots/chat.png"><img src="docs/screenshots/chat.png" width="320" alt="mac-chat with a local message"></a><br></td>
   </tr>
   <tr>
-    <td><a href="docs/screenshots/dashboard.png"><img src="docs/screenshots/dashboard.png" width="320" alt="Storage dashboard with example items"></a><br>Dashboard</td>
-    <td><a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" width="320" alt="Selected items and simulate cleanup dialog"></a><br>Review and simulate</td>
+    <td><a href="docs/screenshots/dashboard.png"><img src="docs/screenshots/dashboard.png" width="320" alt="Storage dashboard with example items"></a><br></td>
+    <td><a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" width="320" alt="Selected items and simulate cleanup dialog"></a><br></td>
   </tr>
 </table>
 
