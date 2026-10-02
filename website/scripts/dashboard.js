@@ -55,6 +55,76 @@
   const reviewNotice = document.querySelector("#review-notice");
   const confirmButton = document.querySelector("#review-simulate-btn");
   const openDetails = createChat(document.querySelector("#details-dialog"));
+  const scanStatus = document.querySelector("#scan-status");
+  const scanUpdated = document.querySelector("#scan-updated");
+  const scanUpdatedTime = document.querySelector("#scan-updated-time");
+  const scanButtons = document.querySelectorAll('[data-action="preview"]');
+
+  function renderHomeRecommendations(state = "ready") {
+    document.querySelectorAll("[data-recommendation]").forEach((card) => {
+      const key = card.dataset.recommendation;
+      const count = card.querySelector("[data-recommendation-count]");
+      const size = card.querySelector("[data-recommendation-size]");
+      const button = card.querySelector("button");
+      if (isNative || state !== "ready") {
+        if (state === "loading") {
+          count.textContent = isNative
+            ? "Waiting for scan results."
+            : "Refreshing example items…";
+        } else {
+          count.textContent = state === "error"
+            ? "Recommendations are unavailable. Try Rescan."
+            : "Recommendations are not available yet.";
+        }
+        size.textContent = "";
+        button.disabled = true;
+        return;
+      }
+      const items = categories[key].items.filter(
+        (item) => item.canClean !== false &&
+          (key !== "downloads" || item.ageDays > 90),
+      );
+      count.textContent = items.length
+        ? `${items.length} eligible example ${items.length === 1 ? "item" : "items"}`
+        : "No eligible example items.";
+      size.textContent = `${formatMB(items.reduce((sum, item) => sum + item.mb, 0))} available for review`;
+      button.disabled = items.length === 0;
+    });
+  }
+
+  function setScanState(state, message) {
+    scanStatus.textContent = message;
+    scanButtons.forEach((button) => {
+      button.disabled = state === "loading";
+    });
+    const completed = state === "ready" || state === "empty";
+    scanUpdated.hidden = !completed;
+    if (completed) {
+      const now = new Date();
+      scanUpdatedTime.dateTime = now.toISOString();
+      scanUpdatedTime.textContent = now.toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
+    renderHomeRecommendations(state === "empty" ? "ready" : state);
+  }
+
+  function refreshDemo(isRefresh = true) {
+    setScanState("loading", "Demo · Refreshing example data…");
+    try {
+      renderHomeStorage(window.MacwipeDemoStorage);
+      refreshSelection();
+      setScanState(
+        "ready",
+        `Demo · Example data ${isRefresh ? "refreshed" : "loaded"}. No files are read or changed.`,
+      );
+    } catch {
+      renderHomeStorage(null);
+      setScanState("error", "Demo · Example data could not be refreshed. Try Rescan.");
+    }
+  }
 
   function renderHomeStorage(storage) {
     const overview = document.querySelector("#storage-overview");
@@ -293,7 +363,7 @@
       if (isNative) {
         previewNote.textContent = "Scanning local files...";
         window.macwipeUI.scan();
-      } else refreshSelection();
+      } else refreshDemo();
     },
     "select-all": selectAll,
     review,
@@ -346,12 +416,38 @@
     document.querySelector(".demo-tag").textContent = "Native · System Scan";
     previewNote.textContent = "Scanning local files...";
     fileList.setAttribute("aria-label", "Local scanned files");
-    document.querySelector(".dashboard > .status-strip").textContent =
-      "macOS helper · Native · System Scan";
+    setScanState("waiting", "Native · Waiting for scan results.");
 
     const nativeUI = window.macwipeUI;
+    const scan = nativeUI.scan;
     const receiveScanData = nativeUI.receiveScanData;
     const onCleanupComplete = nativeUI.onCleanupComplete;
+
+    nativeUI.scan = function () {
+      const started = scan.call(this);
+      if (started !== false) {
+        setScanState("loading", "Native · Scanning local files…");
+      }
+      return started;
+    };
+    window.addEventListener("macwipe:scan", (event) => {
+      const scanned = Object.values(event.detail.categories);
+      const incomplete = scanned.some((category) => category.error);
+      const hasItems = scanned.some((category) =>
+        category.items.some((item) => item.canClean === true),
+      );
+      setScanState(
+        incomplete ? "error" : hasItems ? "ready" : "empty",
+        incomplete
+          ? "Native · Scan finished with unavailable or incomplete categories."
+          : hasItems
+            ? "Native · Scan finished. Review files before cleanup."
+            : "Native · Scan finished. No accessible eligible items found.",
+      );
+    });
+    window.addEventListener("macwipe:cleanup", () => {
+      setScanState("loading", "Native · Waiting for cleanup rescan…");
+    });
 
     nativeUI.receiveScanData = function (payload) {
       if (receiveScanData) receiveScanData.call(this, payload);
@@ -387,7 +483,7 @@
       currentCategory = null;
       switchCategory(key || "home");
 
-      previewNote.textContent = "Scan complete. Review files before cleanup.";
+      previewNote.textContent = scanStatus.textContent;
       if (reviewDialog.open && !confirmButton.hidden) reviewDialog.close();
     };
 
@@ -406,10 +502,12 @@
     };
     window.addEventListener("macwipe:error", (event) => {
       previewNote.textContent = event.detail.message;
+      setScanState("error", `Native · ${event.detail.message}`);
     });
   }
 
-  renderHomeStorage(isNative ? null : window.MacwipeDemoStorage);
+  if (isNative) renderHomeStorage(null);
+  else refreshDemo(false);
   switchCategory("home");
   if (isNative && window.macwipeUI?.scan) window.macwipeUI.scan();
 })();

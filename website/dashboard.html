@@ -9,11 +9,11 @@
     />
     <title>macwipe · Home · Demo</title>
     <link rel="stylesheet" href="styles/theme.css" />
-    <link rel="stylesheet" href="styles/dashboard.css?v=task5" />
+    <link rel="stylesheet" href="styles/dashboard.css?v=task6" />
     <script src="scripts/ui.js" defer></script>
-    <script src="scripts/demo-data.js?v=task5" defer></script>
+    <script src="scripts/demo-data.js?v=task6" defer></script>
     <script src="macwipe-bridge.js" defer></script>
-    <script src="scripts/dashboard.js?v=task5" defer></script>
+    <script src="scripts/dashboard.js?v=task6" defer></script>
   </head>
   <body class="dashboard-body">
     <a class="skip-link" href="#content-pane">Skip to content</a>
@@ -112,33 +112,98 @@
                 See your space. Choose what stays.
               </p>
             </header>
-            <div id="home-view" class="home-panel">
-              <h2>Storage overview</h2>
-              <p id="storage-unavailable">
-                Storage overview is not available yet.
-              </p>
-              <div id="storage-overview" class="storage-overview" hidden>
-                <div class="storage-ring">
-                  <svg
-                    id="storage-chart"
-                    width="180"
-                    height="180"
-                    viewBox="0 0 180 180"
-                    role="img"
-                    aria-label="Storage capacity and usage"
-                  ></svg>
-                  <div class="storage-ring-center" aria-hidden="true">
-                    <strong id="storage-available"></strong>
-                    <span>available</span>
-                    <small id="storage-percent"></small>
+            <div id="home-view">
+              <section class="home-panel" aria-labelledby="storage-heading">
+                <h2 id="storage-heading">Storage overview</h2>
+                <p id="storage-unavailable">
+                  Storage overview is not available yet.
+                </p>
+                <div id="storage-overview" class="storage-overview" hidden>
+                  <div class="storage-ring">
+                    <svg
+                      id="storage-chart"
+                      width="180"
+                      height="180"
+                      viewBox="0 0 180 180"
+                      role="img"
+                      aria-label="Storage capacity and usage"
+                    ></svg>
+                    <div class="storage-ring-center" aria-hidden="true">
+                      <strong id="storage-available"></strong>
+                      <span>available</span>
+                      <small id="storage-percent"></small>
+                    </div>
+                  </div>
+                  <div class="storage-summary">
+                    <h3 id="storage-volume"></h3>
+                    <p id="storage-usage"></p>
+                    <ul id="storage-legend" class="storage-legend"></ul>
                   </div>
                 </div>
-                <div class="storage-summary">
-                  <h3 id="storage-volume"></h3>
-                  <p id="storage-usage"></p>
-                  <ul id="storage-legend" class="storage-legend"></ul>
+              </section>
+              <section
+                class="home-recommendations"
+                aria-labelledby="recommendations-heading"
+              >
+                <h2 id="recommendations-heading">A few things worth reviewing</h2>
+                <div class="recommendation-grid">
+                  <article
+                    class="recommendation-card downloads-card"
+                    data-recommendation="downloads"
+                  >
+                    <h3>
+                      <img src="assets/downloads.svg" width="18" height="18" alt="" />
+                      Older downloads
+                    </h3>
+                    <p data-recommendation-count>
+                      Recommendations are not available yet.
+                    </p>
+                    <p>Files older than 90 days; keep anything you still need.</p>
+                    <p data-recommendation-size></p>
+                    <button
+                      class="question-row primary-btn"
+                      data-category="downloads"
+                      type="button"
+                      disabled
+                    >
+                      Review files
+                    </button>
+                  </article>
+                  <article
+                    class="recommendation-card caches-card"
+                    data-recommendation="caches"
+                  >
+                    <h3>
+                      <img src="assets/caches.svg" width="18" height="18" alt="" />
+                      App caches
+                    </h3>
+                    <p data-recommendation-count>
+                      Recommendations are not available yet.
+                    </p>
+                    <p>Temporary app files; apps may recreate them.</p>
+                    <p data-recommendation-size></p>
+                    <button
+                      class="question-row primary-btn"
+                      data-category="caches"
+                      type="button"
+                      disabled
+                    >
+                      Review files
+                    </button>
+                  </article>
                 </div>
-              </div>
+                <p class="home-cleanup-note">
+                  Nothing is removed automatically. Files moved to Trash still occupy space.
+                </p>
+              </section>
+              <button
+                class="question-row"
+                id="btn-home-rescan"
+                data-action="preview"
+                type="button"
+              >
+                Rescan
+              </button>
             </div>
             <div
               class="toolbar"
@@ -238,7 +303,12 @@
             </footer>
           </section>
         </div>
-        <footer class="status-strip">macOS helper · Demo · Example data</footer>
+        <footer class="status-strip">
+          <span id="scan-status" role="status">Demo · Example data</span>
+          <span id="scan-updated" hidden>
+            · Last updated <time id="scan-updated-time"></time>
+          </span>
+        </footer>
       </main>
     </div>
     <dialog

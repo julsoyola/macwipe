@@ -98,6 +98,61 @@
   margin: 0 0 12px;
   font: bold 21px/1.25 var(--serif);
 }
+.home-recommendations {
+  margin-top: 28px;
+}
+.home-recommendations h2 {
+  margin: 0 0 16px;
+  font: bold 21px/1.25 var(--serif);
+}
+.recommendation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.recommendation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 2px 2px 0 var(--status);
+}
+.downloads-card {
+  background: #f3e1b7;
+}
+.caches-card {
+  background: #e1e8d7;
+}
+.recommendation-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: bold 18px/1.25 var(--serif);
+}
+.recommendation-card h3 img {
+  flex-shrink: 0;
+}
+.recommendation-card p {
+  margin: 0;
+  font-size: 14px;
+}
+.recommendation-card [data-recommendation-size] {
+  margin-top: auto;
+  font-weight: bold;
+}
+.recommendation-card .question-row,
+#btn-home-rescan {
+  width: auto;
+  justify-content: center;
+  align-self: flex-start;
+}
+.home-cleanup-note {
+  margin: 20px 0;
+  font-size: 14px;
+}
 .home-panel p {
   margin: 0;
 }
@@ -346,6 +401,9 @@
   }
   .storage-ring {
     align-self: center;
+  }
+  .recommendation-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
   /* Ensure all table checkboxes are fully interactive and never greyed out unless explicitly disabled */
 #item-table-body input[type="checkbox"] {

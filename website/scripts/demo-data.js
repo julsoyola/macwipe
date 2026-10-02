@@ -77,6 +77,7 @@
         {
           id: "installer",
           name: "Previous installer.dmg",
+          ageDays: 120,
           mb: 420,
           details:
             "An example downloaded installer. Check that you can obtain it again before removing your real installer.",
@@ -84,6 +85,7 @@
         {
           id: "archive",
           name: "Project archive.zip",
+          ageDays: 180,
           mb: 156,
           details:
             "An example compressed project. Confirm its contents are extracted and backed up before deleting an archive.",
@@ -91,6 +93,7 @@
         {
           id: "document",
           name: "Reference notes.pdf",
+          ageDays: 95,
           mb: 12,
           details:
             "An example downloaded document. Personal documents should always be reviewed individually.",
