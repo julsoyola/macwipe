@@ -15,6 +15,11 @@
   let lastScan = null;
   const disabledButtons = new Set();
   const controlSelector = [
+    '[data-action="preview"]',
+    '#btn-explorer-scan',
+    '[data-explorer-id]',
+    '#btn-finder',
+    '#btn-keep-item',
     '[data-macwipe-action="scan"]',
     '[data-macwipe-action="keep"]',
     '[data-macwipe-action="delete"]',
@@ -103,6 +108,8 @@
     setKept(id, kept) { return post("setKept", { id, kept }); },
     openLoginItems() { return post("openLoginItems"); },
     openStorageSettings() { return post("openStorageSettings"); },
+    explore(id) { return post("requestExplorer", id ? { id } : {}); },
+    receiveExplorerData(payload) { setPending(null); emit("explorer", payload); },
     onActionComplete(result) {
       setPending(null);
       showStatus(result.message);

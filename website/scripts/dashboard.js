@@ -73,9 +73,11 @@
   const cachedRows = new Map();
   const categorySort = new Map();
   categorySort.set("explorer", "descending");
+  document.querySelector("#btn-explorer-scan").disabled = false;
   const checkboxById = new Map();
   let currentCategory = null;
   let detailsItem = null;
+  let demoBreadcrumbs = [];
   let selectedMB = 0;
   let selectedSizeLabel = formatMB(0);
   let hasCompletedScan = false;
@@ -374,6 +376,11 @@
 
     const nameCell = document.createElement("td");
     nameCell.textContent = name;
+    if (item.kind === "storage-inventory" && item.directory && !item.package && item.status !== "unavailable") {
+      const drill = document.createElement("button");
+      drill.type = "button"; drill.className = "question-row"; drill.textContent = "Explore folder";
+      drill.dataset.explorerId = item.id; nameCell.append(drill);
+    }
     if (item.kind === "older-download") {
       const note = document.createElement("small");
       note.className = "item-review-label";
@@ -447,8 +454,7 @@
     document.querySelector("#startup-settings").hidden = key !== "startup";
     document.querySelector("#explorer-controls").hidden = key !== "explorer";
     document.querySelector("#btn-preview-scan").hidden = key === "explorer";
-    document.querySelector("#explorer-status").textContent = categories.explorer.scannedAt
-      ? `${isNative ? "Measured" : "Demo examples · No files read"} · ${new Date(categories.explorer.scannedAt * 1000).toLocaleString()}` : "Not scanned.";
+    renderExplorerStatus();
     document.body.dataset.currentView = key;
     document.querySelectorAll("[data-home-control]").forEach((control) => { control.hidden = !isHome; });
     const category = isHome
@@ -600,6 +606,14 @@
   const actions = {
     "explore-storage": () => switchCategory("explorer"),
     "back-home": () => switchCategory("home"),
+    "explorer-scan": () => {
+      if (isNative) {
+        if (window.macwipeUI.explore() !== false) document.querySelector("#explorer-status").textContent = "Scanning storage…";
+      } else {
+        demoBreadcrumbs = [];
+        receiveExplorer({ items: window.MacwipeDemoExplorer, status: "complete", bytes: 15_000_000_000, scannedAt: Date.now() / 1000 });
+      }
+    },
     "keep-item": () => {
       if (!detailsItem) return;
       if (isNative) {
@@ -688,7 +702,22 @@
   document.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button || button.disabled) return;
-    if (button.dataset.view) switchCategory(button.dataset.view);
+    if (button.dataset.explorerId) {
+      if (isNative) {
+        if (window.macwipeUI.explore(button.dataset.explorerId) !== false) document.querySelector("#explorer-status").textContent = "Measuring folder…";
+      } else {
+        const id = button.dataset.explorerId;
+        const item = itemById.get(id) || demoBreadcrumbs.find((item) => item.id === id);
+        const items = window.MacwipeDemoExplorerChildren[id];
+        if (item && items) {
+          const index = demoBreadcrumbs.findIndex((crumb) => crumb.id === id);
+          demoBreadcrumbs = index >= 0 ? demoBreadcrumbs.slice(0, index + 1) : [...demoBreadcrumbs, { id, name: item.name }];
+          receiveExplorer({ items, status: "complete", bytes: items.reduce((sum, entry) => sum + entry.bytes, 0),
+            scannedAt: Date.now() / 1000, breadcrumbs: demoBreadcrumbs });
+        }
+      }
+    }
+    else if (button.dataset.view) switchCategory(button.dataset.view);
     else if (button.dataset.category) switchCategory(button.dataset.category);
     else if (button.dataset.details) {
       const item = itemById.get(button.dataset.details);
@@ -711,6 +740,38 @@
     if (isNative) window.macwipeUI[method]();
     else scanStatus.textContent = `Demo: settings action simulated. ${manual}`;
   }
+  function renderExplorerStatus() {
+    const category = categories.explorer;
+    document.querySelector("#explorer-status").textContent = category.scannedAt
+      ? `${isNative ? category.status || "Measured" : "Demo examples · No files read"} · ${new Date(category.scannedAt * 1000).toLocaleString()}${category.limited ? " · Largest 50 items shown" : ""}` : "Not scanned.";
+  }
+  function receiveExplorer(payload) {
+    const category = categories.explorer;
+    Object.assign(category, { available: true, bytes: payload.bytes, measurementAvailable: Number.isFinite(payload.bytes),
+      eligibleBytes: 0, scannedAt: payload.scannedAt, skippedPaths: payload.skippedCount || 0,
+      status: payload.status, limited: payload.limited, items: payload.items.slice(0, 50).map((file, originalScanIndex) => ({
+        ...file, id: file.id, category: "explorer", kind: "storage-inventory", reviewClassification: "review-carefully",
+        canClean: false, bulkSelectionEligible: false, homeRecommendationEligible: false,
+        bytes: Number.isFinite(file.bytes) ? file.bytes : null, mb: Number.isFinite(file.bytes) ? file.bytes / 1_000_000 : null,
+        info: Number.isFinite(file.bytes) ? `${formatMB(file.bytes / 1_000_000)} · ${file.status || "Example"}` : "Size unavailable",
+        originalScanIndex,
+      })) });
+    cachedRows.delete("explorer");
+    allItems = uniqueItems(Object.values(categories).flatMap((category) => category.items));
+    itemById.clear(); allItems.forEach((item) => itemById.set(item.id, item));
+    const crumbs = document.querySelector("#explorer-breadcrumbs");
+    crumbs.replaceChildren();
+    const roots = document.createElement("button");
+    roots.type = "button"; roots.className = "question-row"; roots.dataset.action = "explorer-scan"; roots.textContent = "Storage roots";
+    crumbs.append(roots);
+    for (const crumb of payload.breadcrumbs || []) {
+      const button = document.createElement("button"); button.type = "button"; button.className = "question-row";
+      button.dataset.explorerId = crumb.id; button.textContent = crumb.name; crumbs.append(button);
+    }
+    renderExplorerStatus();
+    if (currentCategory === "explorer") renderCategoryList("explorer");
+  }
+  window.addEventListener("macwipe:explorer", ({ detail }) => receiveExplorer(detail));
   function inventorySummary(category) {
     if (!category) return "Not scanned.";
     if (isNative && !category.available) return "Not scanned.";

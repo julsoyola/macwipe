@@ -3,10 +3,19 @@
 
   // All values are fictional. This demo never reads files or changes settings.
   window.MacwipeDemoExplorer = [
-    { id: "example-documents", name: "Documents", path: "/Example/Documents", bytes: 8_000_000_000 },
-    { id: "example-pictures", name: "Pictures", path: "/Example/Pictures", bytes: 5_000_000_000 },
-    { id: "example-downloads", name: "Downloads", path: "/Example/Downloads", bytes: 2_000_000_000 },
+    { id: "example-documents", name: "Documents", path: "/Example/Documents", bytes: 8_000_000_000, directory: true },
+    { id: "example-pictures", name: "Pictures", path: "/Example/Pictures", bytes: 5_000_000_000, directory: true },
+    { id: "example-downloads", name: "Downloads", path: "/Example/Downloads", bytes: 2_000_000_000, directory: true },
   ];
+  window.MacwipeDemoExplorerChildren = {
+    "example-documents": [
+      { id: "example-archive", name: "Archive.zip", path: "/Example/Documents/Archive.zip", bytes: 5_000_000_000 },
+      { id: "example-projects", name: "Projects", path: "/Example/Documents/Projects", bytes: 3_000_000_000, directory: true },
+    ],
+    "example-projects": [{ id: "example-video", name: "Project.mov", path: "/Example/Documents/Projects/Project.mov", bytes: 3_000_000_000 }],
+    "example-pictures": [{ id: "example-library", name: "Photos.photoslibrary", path: "/Example/Pictures/Photos.photoslibrary", bytes: 5_000_000_000, directory: true, package: true }],
+    "example-downloads": [{ id: "example-installer", name: "Installer.dmg", path: "/Example/Downloads/Installer.dmg", bytes: 2_000_000_000 }],
+  };
   window.MacwipeDemoStorage = {
     volumeName: "Macintosh HD",
     totalBytes: 512_000_000_000,

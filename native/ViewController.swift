@@ -15,6 +15,7 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
     private var busy = false
     private var pageGeneration = 0
     private let worker = FileWorker()
+    private let explorer = StorageExplorer()
     private let fileQueue = DispatchQueue(label: "macwipe.files", qos: .userInitiated)
 
     override func loadView() {
@@ -156,6 +157,9 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
             return
         }
         switch action {
+        case "requestExplorer":
+            guard body.count == 1 || (body.count == 2 && body["id"] is String) else { return }
+            requestExplorer(id: body["id"] as? String)
         case "setKept":
             guard body.count == 3, let id = body["id"] as? String, let kept = body["kept"] as? Bool else { return }
             busy = true
@@ -179,8 +183,9 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
             guard body.count == 2, let id = body["id"] as? String else { return }
             busy = true
             let worker = worker
+            let explorer = explorer
             fileQueue.async { [weak self] in
-                let url = try? worker.inventoryURL(id: id)
+                let url = (try? worker.inventoryURL(id: id)) ?? (try? explorer.url(id: id))
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     self.busy = false
@@ -224,6 +229,27 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
             deleteFiles(selections)
         default:
             send("onNativeError", BridgeError(action: action, message: "Unknown bridge action."))
+        }
+    }
+
+    private func requestExplorer(id: String?) {
+        busy = true
+        let generation = pageGeneration
+        let explorer = explorer
+        fileQueue.async { [weak self] in
+            do {
+                let result = try id.map { try explorer.drill(id: $0) } ?? explorer.scan()
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.busy = false
+                    if generation == self.pageGeneration { self.send("receiveExplorerData", result) }
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    self?.busy = false
+                    self?.send("onNativeError", BridgeError(action: "requestExplorer", message: "This folder changed or is outside the current inventory. Scan storage again."))
+                }
+            }
         }
     }
 
@@ -893,7 +919,11 @@ private struct ExplorerResult: Encodable, Sendable {
     let processedCount: Int
     let skippedCount: Int
     let bytes: UInt64?
+    var breadcrumbs: [ExplorerCrumb] = []
+    var limited = false
 }
+
+private struct ExplorerCrumb: Encodable, Sendable { let id: String; let name: String }
 
 private final class StorageExplorer: @unchecked Sendable {
     private let manager = FileManager.default
@@ -902,6 +932,8 @@ private final class StorageExplorer: @unchecked Sendable {
     private let cloudOnly: (URL) throws -> Bool
     private var inventory: [String: (URL, EntryStamp)] = [:]
     private var approvedRoots: [URL] = []
+    private var rootInventory: [String: (URL, EntryStamp)] = [:]
+    private var breadcrumbs: [ExplorerCrumb] = []
     private struct EntryStamp: Equatable {
         let device: dev_t
         let inode: ino_t
@@ -928,6 +960,7 @@ private final class StorageExplorer: @unchecked Sendable {
     func scan(control: ScanControl = ScanControl(), progress: (Int) -> Void = { _ in }) -> ExplorerResult {
         inventory.removeAll()
         approvedRoots.removeAll()
+        breadcrumbs.removeAll()
         var items: [ExplorerItem] = []
         var processed = 0
         var skipped = 0
@@ -965,6 +998,7 @@ private final class StorageExplorer: @unchecked Sendable {
         let status = control.cancelled ? "cancelled" : skipped > 0 || items.contains { $0.status != "complete" } ? "partial" : "complete"
         let known = items.compactMap(\.bytes)
         let total = known.reduce(UInt64(0)) { sum, value in sum.addingReportingOverflow(value).overflow ? sum : sum + value }
+        rootInventory = inventory
         return ExplorerResult(items: items, status: status, scannedAt: Date().timeIntervalSince1970,
                               processedCount: processed, skippedCount: skipped, bytes: known.isEmpty ? nil : total)
     }
@@ -975,6 +1009,57 @@ private final class StorageExplorer: @unchecked Sendable {
               try stamp(url) == original,
               url.resolvingSymlinksInPath().standardizedFileURL.path == url.path else { throw FileSafetyError.changed }
         return url
+    }
+
+    func drill(id: String, control: ScanControl = ScanControl(), progress: (Int) -> Void = { _ in }) throws -> ExplorerResult {
+        let root = try url(id: id)
+        let metadata = try stamp(root)
+        guard metadata.kind == S_IFDIR, !isPackage(root) else { throw FileSafetyError.changed }
+        if rootInventory[id] != nil && breadcrumbs.first?.id != id { breadcrumbs.removeAll() }
+        if let index = breadcrumbs.firstIndex(where: { $0.id == id }) {
+            breadcrumbs = Array(breadcrumbs.prefix(index + 1))
+        } else { breadcrumbs.append(ExplorerCrumb(id: id, name: root.lastPathComponent)) }
+        var top: [(ExplorerItem, EntryStamp)] = []
+        var processed = 0
+        var skipped = 0
+        var itemCount = 0
+        var total: UInt64 = 0
+        var hasKnown = false
+        guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: nil,
+            options: [.skipsSubdirectoryDescendants], errorHandler: { _, _ in skipped += 1; return !control.cancelled }) else { throw FileSafetyError.unreadable }
+        while let sourceChild = enumerator.nextObject() as? URL {
+            let child = sourceChild.standardizedFileURL
+            if control.cancelled { break }
+            guard let info = try? stamp(child), info.device == metadata.device, info.kind != S_IFLNK else { skipped += 1; continue }
+            let measurement = measure(child, device: metadata.device, control: control, processed: &processed,
+                                      skipped: &skipped, progress: progress)
+            itemCount += 1
+            if let bytes = measurement.bytes {
+                hasKnown = true
+                let sum = total.addingReportingOverflow(bytes)
+                if sum.overflow { skipped += 1 } else { total = sum.partialValue }
+            }
+            let item = ExplorerItem(id: UUID().uuidString, name: child.lastPathComponent, path: child.path,
+                bytes: measurement.bytes, status: measurement.status, directory: info.kind == S_IFDIR, package: isPackage(child))
+            top.append((item, info))
+            top.sort {
+                if ($0.0.bytes != nil) != ($1.0.bytes != nil) { return $0.0.bytes != nil }
+                return $0.0.bytes == $1.0.bytes ? $0.0.path < $1.0.path : ($0.0.bytes ?? 0) > ($1.0.bytes ?? 0)
+            }
+            if top.count > 50 { top.removeLast() }
+        }
+        let status = control.cancelled ? "cancelled" : skipped > 0 || top.contains { $0.0.status != "complete" } ? "partial" : "complete"
+        let retained = inventory.filter { entry in breadcrumbs.contains(where: { $0.id == entry.key }) }
+        inventory = rootInventory.merging(retained) { first, _ in first }
+        for (item, stamp) in top where item.status != "cancelled" { inventory[item.id] = (URL(fileURLWithPath: item.path), stamp) }
+        return ExplorerResult(items: top.map { $0.0 }, status: status, scannedAt: Date().timeIntervalSince1970,
+            processedCount: processed, skippedCount: skipped, bytes: hasKnown ? total : itemCount == 0 && skipped == 0 ? 0 : nil,
+            breadcrumbs: breadcrumbs, limited: itemCount > 50)
+    }
+
+    private func isPackage(_ url: URL) -> Bool {
+        ["app", "bundle", "framework", "photoslibrary", "musiclibrary", "photolibrary", "pkg"].contains(url.pathExtension.lowercased())
+            || (try? url.resourceValues(forKeys: [.isPackageKey]).isPackage) == true
     }
 
     private func stamp(_ url: URL) throws -> EntryStamp {
@@ -993,6 +1078,10 @@ private final class StorageExplorer: @unchecked Sendable {
             skipped += 1; return (nil, "unavailable")
         }
         let processedBefore = processed
+        if initial.kind == S_IFREG {
+            processed += 1; progress(processed)
+            return initial.bytes >= 0 ? (UInt64(initial.bytes), (try? stamp(root)) == initial ? "complete" : "changed") : (nil, "unavailable")
+        }
         var localSkipped = 0
         var changed = false
         var bytes: UInt64 = 0

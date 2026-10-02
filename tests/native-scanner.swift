@@ -416,6 +416,20 @@ private func runExplorerTests() throws {
     precondition(result.items.first { $0.name == "Pictures" }!.bytes == 0)
     precondition(result.items.first { $0.name == "Movies" }!.bytes == nil)
     do { _ = try explorer.url(id: "unknown"); preconditionFailure("Unknown explorer ID accepted") } catch {}
+    for index in 0..<70 { _ = try writeFixture("Desktop/rank-\(index)", under: home, data: Data(repeating: 1, count: index)) }
+    let rankedRoots = explorer.scan()
+    let desktop = rankedRoots.items.first { $0.name == "Desktop" }!
+    let ranked = try explorer.drill(id: desktop.id)
+    precondition(ranked.items.count == 50 && ranked.limited && ranked.items[0].bytes == 69 && ranked.items.last!.bytes == 20)
+    precondition(Set(ranked.items.map(\.id)).count == 50 && ranked.items.allSatisfy { !$0.canClean })
+    let revealed = try explorer.url(id: ranked.items[0].id)
+    precondition(revealed.path == ranked.items[0].path)
+    do { _ = try explorer.drill(id: desktop.path); preconditionFailure("Arbitrary drill path accepted") } catch {}
+    let documentsRoot = rankedRoots.items.first { $0.name == "Documents" }!
+    let documentItems = try explorer.drill(id: documentsRoot.id)
+    let package = documentItems.items.first { $0.name == "Example.app" }!
+    precondition(package.package && package.bytes == 3)
+    do { _ = try explorer.drill(id: package.id); preconditionFailure("Package drill accepted") } catch {}
     for index in 0..<150 { _ = try writeFixture("Documents/batch/\(index)", under: home) }
     let control = ScanControl()
     let cancelled = explorer.scan(control: control, progress: { if $0 >= 100 { control.cancel() } })
