@@ -1099,8 +1099,12 @@ private final class StorageExplorer: @unchecked Sendable {
         for source in candidates {
             if control.cancelled { break }
             let root = source.resolvingSymlinksInPath().standardizedFileURL
-            // Redirects must remain in the home tree; external/network roots are excluded.
-            let withinHome = root.path.hasPrefix(home.path + "/")
+            // Redirects may reach another fixed home root or its descendants,
+            // never an arbitrary location elsewhere in the home directory.
+            let withinHome = candidates.prefix(7).contains {
+                let fixed = $0.standardizedFileURL.path
+                return root.path == fixed || root.path.hasPrefix(fixed + "/")
+            }
             let sameSystemPath = root.path == source.standardizedFileURL.path && source.path.hasPrefix(systemRoot.appendingPathComponent("Applications").path)
             if approvedRoots.contains(where: { root.path == $0.path || root.path.hasPrefix($0.path + "/") }) { continue }
             guard withinHome || sameSystemPath, let metadata = try? stamp(root),

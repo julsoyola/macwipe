@@ -436,6 +436,12 @@ private func runExplorerTests() throws {
     precondition(cancelled.status == "cancelled" && cancelled.processedCount <= 100)
     let cancelledBeforeStart = ScanControl(); cancelledBeforeStart.cancel()
     precondition(explorer.scan(control: cancelledBeforeStart).status == "cancelled")
+    let redirectedHome = nativeTestRoot.appendingPathComponent("explorer-redirect/home")
+    _ = try writeFixture("Library/Secret/private", under: redirectedHome)
+    try testManager.createSymbolicLink(at: redirectedHome.appendingPathComponent("Downloads"),
+        withDestinationURL: redirectedHome.appendingPathComponent("Library/Secret"))
+    let redirected = StorageExplorer(home: redirectedHome, systemRoot: system, cloudOnly: { _ in false }).scan()
+    precondition(redirected.items.first { $0.name == "Downloads" }!.bytes == nil && redirected.processedCount == 0)
     print("PASS: explorer fixed roots, redirected/nested deduplication, outside symlink and cloud skipping, package logical size, unreadable versus zero, cancellation, and no cleanup registration.")
 }
 
