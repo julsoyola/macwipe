@@ -65,6 +65,13 @@ private func runScannerTests() throws {
     let worker = FileWorker(home: nativeTestHome, systemRoot: nativeTestSystem, trashItem: { moved.append($0.path) })
     let scan = worker.scan()
     let validPath = scan.categories["caches"]!.items.first { $0.name == "valid" }!.path
+    let finderItem = scan.categories["caches"]!.items.first { $0.name == "valid" }!
+    let revealed = try worker.inventoryURL(id: finderItem.id)
+    precondition(revealed.path == validPath)
+    do { _ = try worker.inventoryURL(id: "/arbitrary/path"); preconditionFailure("Unknown Finder ID accepted") } catch {}
+    let startupItem = scan.categories["startup"]!.items[0]
+    let startupRevealed = try worker.inventoryURL(id: startupItem.id)
+    precondition(startupRevealed.path == startupItem.path)
     let tabs = ["storage", "caches", "downloads", "applications", "startup", "performance", "privacy"]
     for key in tabs {
         let category = scan.categories[key]!
@@ -173,6 +180,7 @@ private func runScannerTests() throws {
     precondition(!forged.errors.isEmpty && moved.isEmpty)
     _ = worker.scan()
     try Data([8, 9, 10, 11]).write(to: valid)
+    do { _ = try worker.inventoryURL(id: finderItem.id); preconditionFailure("Changed Finder item accepted") } catch {}
     let changed = worker.cleanup(try selections([("caches", [validPath])]))
     precondition(!changed.errors.isEmpty && moved.isEmpty)
     _ = worker.scan()

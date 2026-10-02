@@ -156,6 +156,31 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
             return
         }
         switch action {
+        case "showInFinder":
+            guard body.count == 2, let id = body["id"] as? String else { return }
+            busy = true
+            let worker = worker
+            fileQueue.async { [weak self] in
+                let url = try? worker.inventoryURL(id: id)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.busy = false
+                    if let url {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                        self.send("onActionComplete", BridgeError(action: action, message: "Revealed in Finder."))
+                    } else {
+                        self.send("onNativeError", BridgeError(action: action, message: "This item changed or is no longer in the current inventory. Scan again."))
+                    }
+                }
+            }
+        case "openLoginItems", "openStorageSettings":
+            guard body.count == 1 else { return }
+            let login = action == "openLoginItems"
+            let destination = login ? "com.apple.LoginItems-Settings.extension" : "com.apple.settings.Storage"
+            let opened = NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:\(destination)")!)
+            send("onActionComplete", BridgeError(action: action, message: opened ? "Opened System Settings."
+                : login ? "Open System Settings → General → Login Items."
+                : "Open System Settings → General → Storage."))
         case "requestScan":
             requestScan()
         case "removeApplication":
@@ -373,6 +398,7 @@ private final class FileWorker: @unchecked Sendable {
     private let trashItem: (URL) throws -> Void
     private let runningApplicationURL: URL
     private var approved: [Category: [String: ApprovedItem]] = [:]
+    private var inventory: [String: ApprovedItem] = [:]
     private let staleAge: TimeInterval = 30 * 24 * 60 * 60
 
     init(home: URL? = nil, systemRoot: URL = URL(fileURLWithPath: "/"),
@@ -394,6 +420,7 @@ private final class FileWorker: @unchecked Sendable {
 
     func scan(now: Date = Date()) -> ScanData {
         approved.removeAll()
+        inventory.removeAll()
         var results: [String: CategoryScan] = [:]
         let applications = roots(for: .applications).prefix(2).flatMap { applicationURLs(in: $0) }
         var installedNames = Set<String>()
@@ -580,6 +607,7 @@ private final class FileWorker: @unchecked Sendable {
                 case .privacy: kind = "browser-data"
                 case .trash: kind = "trash-item"
                 }
+                inventory["\(category.rawValue):\(url.path)"] = ApprovedItem(root: root, category: category, measured: measured)
                 result.items.append(ScanItem(id: "\(category.rawValue):\(url.path)",
                     category: category.rawValue, path: url.path,
                     name: unmatched ? "Unmatched support · \(url.lastPathComponent)" : url.lastPathComponent,
@@ -603,6 +631,15 @@ private final class FileWorker: @unchecked Sendable {
                 scanEntry(child, root: root, category: category, now: now, result: &result)
             }
         }
+    }
+
+    func inventoryURL(id: String) throws -> URL {
+        guard let item = inventory[id] else { throw FileSafetyError.changed }
+        try validateRoot(item.root)
+        let url = item.measured.url
+        guard url.path.hasPrefix(item.root.path + "/"), Self.resolvedPath(url) == url.path,
+              try measure(url).entries == item.measured.entries else { throw FileSafetyError.changed }
+        return url
     }
 
     func cleanup(_ selections: [CleanupSelection], now: Date = Date()) -> CleanupResult {

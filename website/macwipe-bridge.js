@@ -99,6 +99,15 @@
       return post("requestScan");
     },
 
+    showInFinder(id) { return post("showInFinder", { id }); },
+    openLoginItems() { return post("openLoginItems"); },
+    openStorageSettings() { return post("openStorageSettings"); },
+    onActionComplete(result) {
+      setPending(null);
+      showStatus(result.message);
+      emit("action", result);
+    },
+
     keep() {
       return post("keepFiles");
     },

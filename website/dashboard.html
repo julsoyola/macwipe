@@ -149,6 +149,7 @@
                       Available space is reported by macOS. Cleanup candidates
                       use logical file sizes, not guaranteed space freed.
                     </p></details>
+                    <button class="question-row" type="button" data-action="storage-settings">Open macOS Storage settings</button>
                   </div>
                 </div>
               </section>
@@ -236,6 +237,7 @@
             <p class="preview-note" data-category-controls hidden>
               Example data only. No files are read or changed.
             </p>
+            <p id="startup-settings" hidden><button class="question-row" type="button" data-action="login-settings">Open Login Items settings</button></p>
             <noscript
               ><p>Enable JavaScript to try the interactive demo.</p></noscript
             >
@@ -340,6 +342,8 @@
         </button>
       </header>
       <div data-chat-content></div>
+      <p class="toolbar"><button class="question-row" id="btn-finder" data-action="show-finder" type="button" hidden>Show in Finder</button></p>
+      <p id="details-action-status" role="status"></p>
     </dialog>
     <dialog
       class="window modal-dialog"

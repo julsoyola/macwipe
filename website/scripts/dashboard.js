@@ -58,6 +58,7 @@
   const categorySort = new Map();
   const checkboxById = new Map();
   let currentCategory = null;
+  let detailsItem = null;
   let selectedMB = 0;
   let selectedSizeLabel = formatMB(0);
   let hasCompletedScan = false;
@@ -416,6 +417,7 @@
     const isHome = key === "home";
     if (!isHome && !Object.hasOwn(categories, key)) return;
     currentCategory = key;
+    document.querySelector("#startup-settings").hidden = key !== "startup";
     document.body.dataset.currentView = key;
     document.querySelectorAll("[data-home-control]").forEach((control) => { control.hidden = !isHome; });
     const category = isHome
@@ -557,6 +559,13 @@
   }
 
   const actions = {
+    "storage-settings": () => fixedAction("openStorageSettings", "Open System Settings → General → Storage."),
+    "login-settings": () => fixedAction("openLoginItems", "Open System Settings → General → Login Items."),
+    "show-finder": () => {
+      if (!detailsItem) return;
+      if (isNative) window.macwipeUI.showInFinder(detailsItem.id);
+      else document.querySelector("#details-action-status").textContent = "Demo: Show in Finder simulated. No file opened.";
+    },
     "delete-macwipe": () => {
       deleteNotice.textContent = isNative
         ? ""
@@ -624,7 +633,12 @@
     else if (button.dataset.category) switchCategory(button.dataset.category);
     else if (button.dataset.details) {
       const item = itemById.get(button.dataset.details);
-      if (item) openDetails(`Tell me about ${item.name}.`, itemDetails(item));
+      if (item) {
+        detailsItem = item;
+        document.querySelector("#btn-finder").hidden = false;
+        document.querySelector("#details-action-status").textContent = "";
+        openDetails(`Tell me about ${item.name}.`, itemDetails(item));
+      }
     } else if (Object.hasOwn(actions, button.dataset.action)) {
       actions[button.dataset.action]();
     }
@@ -635,6 +649,17 @@
     if (!item) return;
     setSelected(item, event.target.checked);
     updateSelection();
+  });
+
+  function fixedAction(method, manual) {
+    if (isNative) window.macwipeUI[method]();
+    else scanStatus.textContent = `Demo: settings action simulated. ${manual}`;
+  }
+  for (const event of ["action", "error"]) window.addEventListener(`macwipe:${event}`, ({ detail }) => {
+    if (["showInFinder", "openLoginItems", "openStorageSettings"].includes(detail.action)) {
+      document.querySelector("#details-action-status").textContent = detail.message;
+      previewNote.textContent = detail.message;
+    }
   });
 
   if (isNative) {
