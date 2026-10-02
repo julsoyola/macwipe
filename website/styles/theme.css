@@ -129,10 +129,6 @@ h1 {
   color: var(--ink);
   text-decoration: none;
 }
-.download-note {
-  margin: 10px 0 0;
-  font-size: 11px;
-}
 .demo-link {
   margin-top: 12px;
   text-decoration: none;
@@ -184,6 +180,25 @@ h1 {
 }
 .primary-btn:hover {
   background: var(--ink);
+}
+.landing-window .download-control {
+  background: var(--button);
+  color: var(--panel);
+}
+.landing-window .demo-link {
+  background: var(--panel);
+  color: var(--ink);
+}
+.landing-window .download-control:hover,
+.landing-window .demo-link:hover {
+  background: var(--ink);
+  color: var(--panel);
+}
+.landing-slogan {
+  margin: 14px 0 0;
+  font: 14px/1.5 var(--mono);
+  color: var(--ink);
+  text-align: center;
 }
 .question-copy {
   display: flex;
