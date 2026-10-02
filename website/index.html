@@ -8,7 +8,6 @@
       content="macwipe: a quiet, simple scrubber for your Mac. Try the local web dashboard demo."
     />
     <title>macwipe</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png" />
     <link rel="stylesheet" href="styles/theme.css" />
     <script src="scripts/ui.js" defer></script>
     <script src="scripts/landing.js" defer></script>
@@ -27,13 +26,17 @@
           <span class="window-control" aria-hidden="true">−</span>
         </header>
         <div class="landing-content">
-          <img
+          <svg
             class="folder-icon"
-            src="assets/macwipe-icon.png"
             width="48"
             height="48"
-            alt=""
-          />
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <path d="M1 3h5l2 2h7v8H1z" fill="#FFF6EC" stroke="#542B45" />
+            <path d="M2 4h4l2 2h6v6H2z" fill="#A44875" />
+            <path d="M4 8h8v1H4zm0 2h5v1H4z" fill="#FFF6EC" />
+          </svg>
           <h1 id="brand-heading">macwipe</h1>
           <p class="tagline">A quiet, simple scrubber for your Mac.</p>
           <a
