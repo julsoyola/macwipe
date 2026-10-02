@@ -289,6 +289,9 @@
       selectionStatus.textContent = summary;
     reviewButton.disabled = count === 0;
     const selectableItems = bulkSelectableItems();
+    const hasRemovableItems = categories[currentCategory]?.items.some((item) => item.canClean !== false);
+    selectAllButton.hidden = !hasRemovableItems;
+    selectionStatus.closest("[data-category-controls]").hidden = !hasRemovableItems;
     selectAllButton.disabled = selectableItems.length === 0;
     const allChecked =
       selectableItems.length > 0 &&
@@ -337,6 +340,12 @@
 
     const nameCell = document.createElement("td");
     nameCell.textContent = name;
+    if (item.canClean === false) {
+      const note = document.createElement("small");
+      note.className = "item-review-label";
+      note.textContent = "Read-only inventory";
+      nameCell.append(note);
+    }
     if (unmatched) {
       const warning = document.createElement("small");
       warning.className = "item-review-label";
@@ -379,6 +388,7 @@
     return [
       !isNative ? "Demo example. No files are read or changed." : "",
       explanation,
+      item.canClean === false ? "Read-only inventory. Cleanup is not available for this item." : "",
       item.path ? `Path: ${item.path}` : "",
       `Logical file size: ${size}`,
       item.info ? `Size/Info: ${item.info}` : "",

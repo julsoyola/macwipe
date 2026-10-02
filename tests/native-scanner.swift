@@ -47,6 +47,10 @@ private func runScannerTests() throws {
     _ = try writeFixture("Library/LaunchAgents/ignore.txt", under: nativeTestHome)
     _ = try writeFixture("Library/LaunchAgents/global.plist", under: nativeTestSystem)
     _ = try writeFixture("Library/LaunchDaemons/daemon.plist", under: nativeTestSystem)
+    let privateVar = nativeTestSystem.appendingPathComponent("private/var")
+    try testManager.createDirectory(at: privateVar, withIntermediateDirectories: true)
+    try testManager.createSymbolicLink(at: nativeTestSystem.appendingPathComponent("var"),
+                                     withDestinationURL: privateVar)
     _ = try writeFixture("var/log/system.log", under: nativeTestSystem)
     _ = try writeFixture("Library/Safari/History.db", under: nativeTestHome)
     _ = try writeFixture("Library/Safari/Bookmarks.plist", under: nativeTestHome)
@@ -61,8 +65,15 @@ private func runScannerTests() throws {
     let tabs = ["storage", "caches", "downloads", "applications", "startup", "performance", "privacy"]
     for key in tabs {
         let category = scan.categories[key]!
-        precondition(category.canClean && category.error == nil && !category.items.isEmpty, key)
-        precondition(category.items.allSatisfy { $0.canClean && !$0.id.isEmpty && !$0.category.isEmpty && $0.path.hasPrefix("/") })
+        let readOnly = key == "startup" || key == "performance"
+        precondition(category.canClean == !readOnly && category.error == nil && !category.items.isEmpty, key)
+        precondition(category.items.allSatisfy {
+            $0.canClean == !readOnly && !$0.id.isEmpty && !$0.category.isEmpty && $0.path.hasPrefix("/")
+        })
+        if readOnly {
+            precondition(category.bytes > 0 && category.eligibleBytes == 0)
+            precondition(category.items.allSatisfy { !$0.bulkSelectionEligible && !$0.homeRecommendationEligible })
+        }
     }
     precondition(scan.categories["caches"]!.items.count == 2)
     precondition(scan.categories["caches"]!.skippedPaths > 0)
@@ -115,8 +126,33 @@ private func runScannerTests() throws {
     precondition(encodedUnmatched["bulkSelectionEligible"] as? Bool == false)
     precondition(encodedUnmatched["homeRecommendationEligible"] as? Bool == false)
 
-    let all: [(String, [String])] = Category.allCases.filter { $0 != .trash }.map { category in
-        (category.rawValue, scan.categories[category.rawValue]!.items.map(\.path))
+    for category in ["startup", "performance"] {
+        let paths = scan.categories[category]!.items.map(\.path)
+        let rejected = worker.cleanup(try selections([(category, paths)]))
+        precondition(!rejected.errors.isEmpty && rejected.movedCount == 0 && moved.isEmpty)
+        _ = worker.scan()
+        let legacy = try JSONDecoder().decode([CleanupSelection].self,
+            from: JSONSerialization.data(withJSONObject: [category]))
+        let legacyRejected = worker.cleanup(legacy)
+        precondition(!legacyRejected.errors.isEmpty && legacyRejected.movedCount == 0 && moved.isEmpty)
+        _ = worker.scan()
+    }
+    let systemLog = scan.categories["performance"]!.items.first { $0.path.hasSuffix("/system.log") }!
+    precondition(systemLog.path.contains("/private/var/log/") && !systemLog.canClean)
+    let disguised = worker.cleanup(try selections([("logs", [systemLog.path])]))
+    precondition(!disguised.errors.isEmpty && moved.isEmpty)
+    _ = worker.scan()
+    let mixed = worker.cleanup(try selections([
+        ("caches", [validPath]), ("startup", scan.categories["startup"]!.items.map(\.path))
+    ]))
+    precondition(!mixed.errors.isEmpty && mixed.movedCount == 0 && moved.isEmpty)
+    _ = worker.scan()
+    precondition(scan.categories["logs"]!.items.contains { $0.name == "log" && $0.canClean })
+    let encodedStartup = categories["startup"]!["items"] as! [[String: Any]]
+    precondition(encodedStartup.allSatisfy { $0["canClean"] as? Bool == false })
+    let all: [(String, [String])] = Category.allCases.compactMap { category in
+        let paths = scan.categories[category.rawValue]!.items.filter { $0.canClean }.map(\.path)
+        return paths.isEmpty ? nil : (category.rawValue, paths)
     }
     let selectedCount = all.reduce(0) { $0 + $1.1.count }
     let result = worker.cleanup(try selections(all))

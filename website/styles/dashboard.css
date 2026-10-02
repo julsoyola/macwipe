@@ -321,7 +321,7 @@
 .item-list .item-review-label {
   display: block;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .dashboard-body [data-message="answer"] {
   white-space: pre-line;

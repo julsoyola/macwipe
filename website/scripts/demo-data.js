@@ -193,6 +193,7 @@
       items: [
         {
           id: "sync-login",
+          canClean: false,
           kind: "startup-file",
           reviewClassification: "review-carefully",
           bulkSelectionEligible: false,
@@ -205,6 +206,7 @@
         },
         {
           id: "menu-login",
+          canClean: false,
           kind: "startup-file",
           reviewClassification: "review-carefully",
           bulkSelectionEligible: false,
@@ -217,6 +219,7 @@
         },
         {
           id: "update-login",
+          canClean: false,
           kind: "startup-file",
           reviewClassification: "review-carefully",
           bulkSelectionEligible: false,
@@ -236,6 +239,7 @@
       items: [
         {
           id: "cpu-task",
+          canClean: false,
           kind: "activity-example",
           reviewClassification: "review-carefully",
           bulkSelectionEligible: false,
@@ -248,6 +252,7 @@
         },
         {
           id: "memory-app",
+          canClean: false,
           kind: "activity-example",
           reviewClassification: "review-carefully",
           bulkSelectionEligible: false,
@@ -260,6 +265,7 @@
         },
         {
           id: "indexing",
+          canClean: false,
           kind: "activity-example",
           reviewClassification: "review-carefully",
           bulkSelectionEligible: false,

@@ -436,7 +436,7 @@ private final class FileWorker: @unchecked Sendable {
             }
             result.formatted = format(result.bytes)
             result.eligibleFormatted = format(result.eligibleBytes)
-            result.canClean = !result.items.isEmpty
+            result.canClean = result.items.contains { $0.canClean }
             result.items.sort { $0.path < $1.path }
             results[category.rawValue] = result
         }
@@ -451,7 +451,7 @@ private final class FileWorker: @unchecked Sendable {
         }
         storage.formatted = format(storage.bytes)
         storage.eligibleFormatted = format(storage.eligibleBytes)
-        storage.canClean = !storage.items.isEmpty
+        storage.canClean = storage.items.contains { $0.canClean }
         results["storage"] = storage
         return ScanData(categories: results, storage: volumeStorage())
     }
@@ -554,8 +554,13 @@ private final class FileWorker: @unchecked Sendable {
                 && (category != .downloads || (metadata.kind == S_IFREG
                     && Double(metadata.modifiedSeconds) < now.timeIntervalSince1970 - staleAge))
             if eligible {
-                let nextEligibleBytes = try adding(result.eligibleBytes, measured.bytes)
-                approved[category, default: [:]][url.path] = ApprovedItem(root: root, measured: measured)
+                // Performance inventories resolved system logs and user diagnostic reports.
+                // Neither these locations nor startup configurations have cleanup eligibility.
+                let canClean = category != .startup && category != .performance
+                if canClean {
+                    result.eligibleBytes = try adding(result.eligibleBytes, measured.bytes)
+                    approved[category, default: [:]][url.path] = ApprovedItem(root: root, measured: measured)
+                }
                 let unmatched = category == .applications && root.lastPathComponent == "Application Support"
                 let kind: String
                 switch category {
@@ -570,12 +575,11 @@ private final class FileWorker: @unchecked Sendable {
                 result.items.append(ScanItem(id: "\(category.rawValue):\(url.path)",
                     category: category.rawValue, path: url.path,
                     name: unmatched ? "Unmatched support · \(url.lastPathComponent)" : url.lastPathComponent,
-                    bytes: measured.bytes, formatted: format(measured.bytes), canClean: true,
+                    bytes: measured.bytes, formatted: format(measured.bytes), canClean: canClean,
                     kind: kind,
                     reviewClassification: category == .caches ? "temporary" : "review-carefully",
-                    bulkSelectionEligible: category == .caches,
-                    homeRecommendationEligible: category == .caches || category == .downloads))
-                result.eligibleBytes = nextEligibleBytes
+                    bulkSelectionEligible: canClean && category == .caches,
+                    homeRecommendationEligible: canClean && (category == .caches || category == .downloads)))
             }
             result.bytes = nextBytes
         } catch {
@@ -598,6 +602,7 @@ private final class FileWorker: @unchecked Sendable {
         var selectedPaths = Set<String>()
         for selection in selections {
             guard let category = Category(rawValue: selection.id), category != .trash,
+                  category != .startup, category != .performance,
                   let items = snapshot[category] else {
                 result.errors.append("Category is unavailable or cannot be cleaned. Scan again.")
                 return result
