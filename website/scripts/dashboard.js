@@ -5,12 +5,17 @@
   document.body.classList.toggle("native-mode", isNative);
 
   function itemMetadata(item) {
+    const temporary = item.kind === "cache" && item.reviewClassification === "temporary";
+    const classified = typeof item.kind === "string" && item.kind !== "unknown"
+      && ["temporary", "review-carefully"].includes(item.reviewClassification);
     return {
       kind: item.kind || "unknown",
       reviewClassification: item.kind === "cache" && item.reviewClassification === "temporary"
         ? "temporary" : "review-carefully",
-      bulkSelectionEligible: item.bulkSelectionEligible === true,
-      homeRecommendationEligible: item.homeRecommendationEligible === true,
+      bulkSelectionEligible: temporary && item.bulkSelectionEligible === true,
+      homeRecommendationEligible: classified && item.homeRecommendationEligible === true,
+      explanation: item.explanation || "",
+      ownerName: item.ownerName || null,
     };
   }
 

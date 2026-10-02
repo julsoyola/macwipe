@@ -330,6 +330,8 @@ private struct ScanItem: Encodable, Sendable {
     let bulkSelectionEligible: Bool
     let homeRecommendationEligible: Bool
     let modifiedAt: TimeInterval
+    let explanation: String
+    let ownerName: String?
 }
 
 private struct CategoryScan: Encodable, Sendable {
@@ -420,7 +422,12 @@ private final class FileWorker: @unchecked Sendable {
                 let entries = category == .applications && root.lastPathComponent != "Application Support"
                     ? applications.filter { $0.path.hasPrefix(root.path + "/") }
                     : children(of: root, onError: { result.skippedPaths += 1 })
-                for child in entries {
+                let candidates = category == .caches ? entries.flatMap { entry in
+                    // Recognize only specific pip cache units, never the whole tree.
+                    entry.lastPathComponent == "pip" && (try? stamp(entry).kind) == S_IFDIR
+                        ? children(of: entry, onError: { result.skippedPaths += 1 }) : [entry]
+                } : entries
+                for child in candidates {
                     // Diagnostic reports have their own Performance inventory.
                     if category == .logs && child.lastPathComponent == "DiagnosticReports" { continue }
                     if category == .applications {
@@ -562,6 +569,7 @@ private final class FileWorker: @unchecked Sendable {
                     approved[category, default: [:]][url.path] = ApprovedItem(root: root, category: category, measured: measured)
                 }
                 let unmatched = category == .applications && root.lastPathComponent == "Application Support"
+                let cacheRule = category == .caches ? recognizedCache(url, root: root) : nil
                 let kind: String
                 switch category {
                 case .caches: kind = "cache"
@@ -577,10 +585,13 @@ private final class FileWorker: @unchecked Sendable {
                     name: unmatched ? "Unmatched support · \(url.lastPathComponent)" : url.lastPathComponent,
                     bytes: measured.bytes, formatted: format(measured.bytes), canClean: canClean,
                     kind: kind,
-                    reviewClassification: category == .caches ? "temporary" : "review-carefully",
-                    bulkSelectionEligible: canClean && category == .caches,
-                    homeRecommendationEligible: canClean && (category == .caches || category == .downloads),
-                    modifiedAt: Double(metadata.modifiedSeconds) + Double(metadata.modifiedNanoseconds) / 1_000_000_000))
+                    reviewClassification: cacheRule != nil ? "temporary" : "review-carefully",
+                    bulkSelectionEligible: canClean && cacheRule != nil,
+                    homeRecommendationEligible: canClean && (cacheRule != nil || category == .downloads),
+                    modifiedAt: Double(metadata.modifiedSeconds) + Double(metadata.modifiedNanoseconds) / 1_000_000_000,
+                    explanation: cacheRule?.explanation ?? (category == .caches
+                        ? "Unrecognized cache candidate. Review individually; its contents and removal consequences are not established. Folder modification time is not the age of every child."
+                        : ""), ownerName: cacheRule?.owner))
             }
             result.bytes = nextBytes
         } catch {
@@ -697,6 +708,21 @@ private final class FileWorker: @unchecked Sendable {
         let root: URL
         let category: Category
         let measured: MeasuredItem
+    }
+
+    private struct CacheRule {
+        let relativePath: String
+        let owner: String
+        let explanation: String
+    }
+
+    private func recognizedCache(_ url: URL, root: URL) -> CacheRule? {
+        let rules = [
+            CacheRule(relativePath: "pip/http-v2", owner: "pip", explanation: "Recognized pip HTTP response cache. Removal may require downloading responses again. Folder modification time is not the age of every child."),
+            CacheRule(relativePath: "pip/wheels", owner: "pip", explanation: "Recognized pip wheel cache. Removal may require rebuilding or downloading wheels again. Folder modification time is not the age of every child.")
+        ]
+        return rules.first { root.appendingPathComponent($0.relativePath).path == url.path
+            && (try? stamp(url).kind) == S_IFDIR }
     }
 
     private func eligibleDownload(_ metadata: FileStamp, url: URL, root: URL, now: Date) -> Bool {

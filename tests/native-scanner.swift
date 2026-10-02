@@ -32,6 +32,9 @@ private func runScannerTests() throws {
     _ = try writeFixture("Library/Application Support/Google/Chrome/Default/Bookmarks", under: nativeTestHome)
     _ = try writeFixture("Library/Application Support/Google/Chrome/Default/Network/Cookies", under: nativeTestHome)
     let valid = try writeFixture("Library/Caches/valid", under: nativeTestHome)
+    _ = try writeFixture("Library/Caches/pip/http-v2/response", under: nativeTestHome)
+    _ = try writeFixture("Library/Caches/pip/wheels/wheel", under: nativeTestHome)
+    _ = try writeFixture("Library/Caches/pip/sessions/state", under: nativeTestHome)
     _ = try writeFixture("Library/Caches/mixed/readable", under: nativeTestHome)
     _ = try writeFixture("Library/Caches/mixed/locked/private", under: nativeTestHome)
     let locked = nativeTestHome.appendingPathComponent("Library/Caches/mixed/locked")
@@ -75,7 +78,7 @@ private func runScannerTests() throws {
             precondition(category.items.allSatisfy { !$0.bulkSelectionEligible && !$0.homeRecommendationEligible })
         }
     }
-    precondition(scan.categories["caches"]!.items.count == 2)
+    precondition(scan.categories["caches"]!.items.count == 5)
     precondition(scan.categories["caches"]!.skippedPaths > 0)
     precondition(scan.categories["downloads"]!.items.map(\.name) == ["stale.zip"])
     precondition(scan.categories["downloads"]!.skippedPaths == 0)
@@ -87,9 +90,11 @@ private func runScannerTests() throws {
     precondition(unmatched.reviewClassification == "review-carefully")
     precondition(!unmatched.bulkSelectionEligible && !unmatched.homeRecommendationEligible)
     precondition(unmatched.canClean)
-    precondition(scan.categories["caches"]!.items.allSatisfy {
-        $0.kind == "cache" && $0.reviewClassification == "temporary"
-            && $0.bulkSelectionEligible && $0.homeRecommendationEligible
+    let recognizedCaches = scan.categories["caches"]!.items.filter { $0.bulkSelectionEligible }
+    precondition(Set(recognizedCaches.map(\.name)) == ["http-v2", "wheels"])
+    precondition(recognizedCaches.allSatisfy { $0.reviewClassification == "temporary" && $0.homeRecommendationEligible && $0.ownerName == "pip" })
+    precondition(scan.categories["caches"]!.items.filter { !$0.bulkSelectionEligible }.allSatisfy {
+        $0.canClean && $0.reviewClassification == "review-carefully" && !$0.homeRecommendationEligible && !$0.explanation.isEmpty
     })
     precondition(scan.categories["downloads"]!.items.allSatisfy {
         $0.kind == "older-download" && $0.reviewClassification == "review-carefully"
