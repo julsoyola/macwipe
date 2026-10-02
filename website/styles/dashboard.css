@@ -49,7 +49,7 @@
 .native-mode .recommendation-card p { font-size: 13px; line-height: 1.25; grid-column: 1 / -1; }
 .native-mode .recommendation-card [data-recommendation-size] { grid-column: 1; margin: 0; align-self: center; }
 .native-mode .recommendation-card button { grid-column: 2; padding: 4px 8px; font-size: 13px; }
-.native-mode .home-cleanup-note { margin: 8px 0; font-size: 13px; }
+.native-mode .home-cleanup-note { margin: 4px 0; font-size: 13px; }
 .home-system-status { margin: 8px 0 0; font-size: 13px; }
 @media (max-width: 749px) {
   .native-mode .home-panel:has(#storage-overview:not([hidden])) { display: block; }

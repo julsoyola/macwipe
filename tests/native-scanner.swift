@@ -87,6 +87,8 @@ private func runScannerTests() throws {
     }
     precondition(scan.categories["caches"]!.items.count == 5)
     precondition(scan.categories["caches"]!.skippedPaths > 0)
+    precondition(scan.categories["caches"]!.measurementAvailable && !scan.categories["caches"]!.skippedLocations.isEmpty)
+    precondition(scan.categories["downloads"]!.bytes > scan.categories["downloads"]!.eligibleBytes)
     precondition(scan.categories["downloads"]!.items.map(\.name) == ["stale.zip"])
     precondition(scan.categories["downloads"]!.skippedPaths == 0)
     precondition(scan.categories["applications"]!.items.count == 4)
@@ -126,6 +128,7 @@ private func runScannerTests() throws {
     let missingScan = FileWorker(home: missingHome, systemRoot: nativeTestSystem,
                                  trashItem: { _ in }).scan()
     precondition(missingScan.storage == nil)
+    precondition(!missingScan.categories["downloads"]!.measurementAvailable)
     let categories = encoded["categories"] as! [String: [String: Any]]
     precondition((categories["caches"]!["skippedPaths"] as! Int) > 0)
     let item = (categories["applications"]!["items"] as! [[String: Any]])[0]

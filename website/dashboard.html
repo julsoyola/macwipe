@@ -148,8 +148,9 @@
                     <details class="storage-disclosure"><summary>Details</summary><p id="storage-size-note" hidden>
                       Available space is reported by macOS. Cleanup candidates
                       use logical file sizes, not guaranteed space freed.
-                    </p></details>
+                    </p>
                     <button class="question-row" type="button" data-action="storage-settings">Open macOS Storage settings</button>
+                    </details>
                   </div>
                 </div>
               </section>
@@ -167,6 +168,7 @@
                       <img src="assets/downloads.svg" width="18" height="18" alt="" />
                       Downloads
                     </h3>
+                    <p data-inventory-summary="downloads"></p>
                     <p data-recommendation-count>
                       Recommendations are not available yet.
                     </p>
@@ -189,6 +191,7 @@
                       <img src="assets/caches.svg" width="18" height="18" alt="" />
                       App caches
                     </h3>
+                    <p data-inventory-summary="caches"></p>
                     <p data-recommendation-count>
                       Recommendations are not available yet.
                     </p>
@@ -238,6 +241,8 @@
               Example data only. No files are read or changed.
             </p>
             <p id="startup-settings" hidden><button class="question-row" type="button" data-action="login-settings">Open Login Items settings</button></p>
+            <p id="category-summary" data-category-controls hidden></p>
+            <details id="category-skipped" data-category-controls hidden><summary>Skipped locations</summary><ul></ul></details>
             <noscript
               ><p>Enable JavaScript to try the interactive demo.</p></noscript
             >

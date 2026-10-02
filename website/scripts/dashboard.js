@@ -110,6 +110,9 @@
   deleteDialog.addEventListener("close", () => deleteButton.focus());
 
   function renderHomeRecommendations(state = "ready") {
+    document.querySelectorAll("[data-inventory-summary]").forEach((summary) => {
+      summary.textContent = inventorySummary(categories[summary.dataset.inventorySummary]);
+    });
     document.querySelectorAll("[data-recommendation]").forEach((card) => {
       const key = card.dataset.recommendation;
       const count = card.querySelector("[data-recommendation-count]");
@@ -131,7 +134,7 @@
       }
       const category = categories[key];
       if (isNative && !category.available) {
-        count.textContent = "Recommendations are unavailable for this category.";
+        count.textContent = "Not scanned.";
         size.textContent = "";
         button.disabled = true;
         return;
@@ -139,6 +142,7 @@
       let items = category.items.filter(
         (item) => item.kind !== "unmatched-support"
           && !item.kept
+          && Number.isFinite(item.bytes) && item.bytes > 0
           && item.homeRecommendationEligible
           && (isNative
             ? item.canClean === true
@@ -216,8 +220,11 @@
   function renderHomeStorage(storage) {
     const overview = document.querySelector("#storage-overview");
     const unavailable = document.querySelector("#storage-unavailable");
-    document.querySelector("#storage-size-note").hidden = !isNative;
-    document.querySelector(".storage-disclosure").hidden = !isNative;
+    document.querySelector("#storage-size-note").hidden = false;
+    document.querySelector("#storage-size-note").textContent = isNative
+      ? "Available space is reported by macOS. Cleanup candidates use logical file sizes, not guaranteed space freed."
+      : "Fictional storage example. Logical file sizes are not guaranteed space freed.";
+    document.querySelector(".storage-disclosure").hidden = false;
     if (storage && (
       !Number.isFinite(storage.totalBytes) || storage.totalBytes <= 0 ||
       !Number.isFinite(storage.availableBytes) || storage.availableBytes < 0 ||
@@ -458,6 +465,14 @@
 
   function renderCategoryList(key) {
     const category = categories[key];
+    const eligible = isNative ? category.eligibleBytes : category.items.filter((item) => item.canClean !== false)
+      .reduce((sum, item) => sum + (item.bytes || 0), 0);
+    document.querySelector("#category-summary").textContent = `${inventorySummary(category)} · Eligible candidates: ${Number.isFinite(eligible) ? eligible === 0 ? "0 bytes" : formatMB(eligible / 1_000_000) : "Unavailable"}`;
+    const skipped = document.querySelector("#category-skipped");
+    skipped.hidden = !(category.skippedPaths > 0);
+    skipped.querySelector("ul").replaceChildren(...(category.skippedLocations || []).map((path) => {
+      const entry = document.createElement("li"); entry.textContent = path; return entry;
+    }));
     if (!cachedRows.has(key)) cachedRows.set(key, new Map());
     const rows = cachedRows.get(key);
     const items = [...new Map((category.items || []).map((item) => [item.id, item])).values()];
@@ -506,7 +521,7 @@
       const cell = document.createElement("td");
       cell.colSpan = 4;
       cell.textContent = !category.available
-        ? "Scan results are unavailable for this category."
+        ? "Not scanned."
         : category.error || category.skippedPaths > 0
           ? "No eligible items returned. Some paths were skipped or unreadable; results are incomplete."
           : "No accessible eligible items found.";
@@ -679,6 +694,16 @@
     if (isNative) window.macwipeUI[method]();
     else scanStatus.textContent = `Demo: settings action simulated. ${manual}`;
   }
+  function inventorySummary(category) {
+    if (!category) return "Not scanned.";
+    if (isNative && !category.available) return "Not scanned.";
+    const known = isNative ? category.measurementAvailable !== false && Number.isFinite(category.bytes)
+      : category.items.every((item) => Number.isFinite(item.bytes));
+    const bytes = isNative ? category.bytes : category.items.reduce((sum, item) => sum + (item.bytes || 0), 0);
+    const amount = known ? bytes === 0 ? "0 bytes" : bytes < 1_000_000
+      ? `${bytes.toLocaleString("en-US")} bytes` : formatMB(bytes / 1_000_000) : "Unavailable";
+    return `${!isNative ? "Example · " : ""}${category.skippedPaths > 0 || category.error ? "Partial · " : ""}Measured inventory: ${amount}`;
+  }
   function showItemDetails(item) {
     detailsItem = item;
     document.querySelector("#btn-finder").hidden = false;
@@ -734,6 +759,11 @@
         category.available = !!source;
         category.error = source?.error;
         category.skippedPaths = source?.skippedPaths || 0;
+        category.skippedLocations = source?.skippedLocations || [];
+        category.bytes = source?.bytes;
+        category.eligibleBytes = source?.eligibleBytes;
+        category.measurementAvailable = source?.measurementAvailable;
+        category.scannedAt = source?.scannedAt;
         category.items = uniqueItems(source?.items || []).map((file, originalScanIndex) => ({
           ...itemMetadata(file),
           originalScanIndex,

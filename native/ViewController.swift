@@ -387,6 +387,9 @@ private struct CategoryScan: Encodable, Sendable {
     var canClean = false
     var items: [ScanItem] = []
     var skippedPaths = 0
+    var skippedLocations: [String] = []
+    var measurementAvailable = false
+    var scannedAt: TimeInterval?
     var error: String?
 }
 
@@ -470,15 +473,18 @@ private final class FileWorker: @unchecked Sendable {
                 // Invalid or inaccessible roots never disable other roots/items.
                 guard (try? validateRoot(root)) != nil else {
                     result.skippedPaths += 1
+                    result.skippedLocations.append(root.path)
                     continue
                 }
+                let skippedBefore = result.skippedPaths
                 let entries = category == .applications && root.lastPathComponent != "Application Support"
                     ? applications.filter { $0.path.hasPrefix(root.path + "/") }
-                    : children(of: root, onError: { result.skippedPaths += 1 })
+                    : children(of: root, onError: { result.skippedPaths += 1; result.skippedLocations.append(root.path) })
+                if result.skippedPaths == skippedBefore { result.measurementAvailable = true }
                 let candidates = category == .caches ? entries.flatMap { entry in
                     // Recognize only specific pip cache units, never the whole tree.
                     entry.lastPathComponent == "pip" && (try? stamp(entry).kind) == S_IFDIR
-                        ? children(of: entry, onError: { result.skippedPaths += 1 }) : [entry]
+                        ? children(of: entry, onError: { result.skippedPaths += 1; result.skippedLocations.append(entry.path) }) : [entry]
                 } : entries
                 for child in candidates {
                     // Diagnostic reports have their own Performance inventory.
@@ -498,6 +504,7 @@ private final class FileWorker: @unchecked Sendable {
             result.formatted = format(result.bytes)
             result.eligibleFormatted = format(result.eligibleBytes)
             result.canClean = result.items.contains { $0.canClean }
+            result.scannedAt = now.timeIntervalSince1970
             result.items.sort { $0.path < $1.path }
             results[category.rawValue] = result
         }
@@ -653,6 +660,7 @@ private final class FileWorker: @unchecked Sendable {
             // A restricted descendant must not hide accessible siblings. Never
             // approve a partial directory or a damaged/partly unreadable app.
             result.skippedPaths += 1
+            result.skippedLocations.append(url.path)
             guard category != .downloads, url.pathExtension.lowercased() != "app" else { return }
             for child in children(of: url) {
                 scanEntry(child, root: root, category: category, now: now, result: &result)
