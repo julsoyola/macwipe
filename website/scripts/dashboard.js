@@ -146,6 +146,7 @@
     scanButtons.forEach((button) => {
       button.disabled = state === "loading";
     });
+    if (isNative) deleteConfirm.disabled = state === "loading" || window.macwipeUI.isBusy;
     const completed = state === "ready" || state === "empty" || state === "partial";
     if (completed) hasCompletedScan = true;
     scanButtons.forEach((button) => {
@@ -504,14 +505,20 @@
   const actions = {
     "delete-macwipe": () => {
       deleteNotice.textContent = isNative
-        ? "Application removal is not available yet."
+        ? ""
         : "Demo only. No application will be removed.";
-      deleteConfirm.disabled = isNative;
+      deleteConfirm.disabled = isNative && (!window.macwipeUI.removeApplication || window.macwipeUI.isBusy);
       deleteDialog.showModal();
       document.querySelector("#delete-macwipe-keep").focus();
     },
     "confirm-delete-macwipe": () => {
-      if (isNative) return;
+      if (isNative) {
+        if (window.macwipeUI.removeApplication() !== false) {
+          deleteNotice.textContent = "Moving macwipe to Trash…";
+          scanButtons.forEach((button) => { button.disabled = true; });
+        }
+        return;
+      }
       deleteNotice.textContent = "Simulated completion. No application was removed.";
       deleteConfirm.disabled = true;
     },
@@ -683,6 +690,13 @@
       if (nativeUI.scan) nativeUI.scan();
     };
     window.addEventListener("macwipe:error", (event) => {
+      if (event.detail.action === "removeApplication") {
+        deleteNotice.textContent = event.detail.message;
+        deleteConfirm.disabled = false;
+        scanButtons.forEach((button) => { button.disabled = false; });
+        if (!deleteDialog.open) deleteDialog.showModal();
+        return;
+      }
       previewNote.textContent = event.detail.message;
       setScanState("error", `Native · ${event.detail.message}`);
     });

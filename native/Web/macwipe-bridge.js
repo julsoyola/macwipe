@@ -25,6 +25,9 @@
     "#delete-files-btn",
     "#btn-keep-files",
     "#btn-delete-files",
+    "#btn-delete-macwipe",
+    "#delete-macwipe-confirm",
+    "#delete-macwipe-keep",
   ].join(",");
 
   function emit(name, detail) {
@@ -86,6 +89,12 @@
   }
 
   const ui = {
+    get isBusy() { return pendingAction !== null; },
+
+    removeApplication() {
+      return post("removeApplication");
+    },
+
     scan() {
       return post("requestScan");
     },

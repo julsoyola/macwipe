@@ -210,7 +210,70 @@ extension ViewController {
     }
 }
 
+private func runAppRemovalTests() throws {
+    let root = nativeTestRoot.appendingPathComponent("self-removal").resolvingSymlinksInPath()
+    func app(_ name: String, identity: String = "app.macwipe.native") throws -> URL {
+        let data = try PropertyListSerialization.data(fromPropertyList: [
+            "CFBundleIdentifier": identity, "CFBundleExecutable": "macwipe",
+            "CFBundlePackageType": "APPL"
+        ], format: .xml, options: 0)
+        let target = root.appendingPathComponent("Applications/\(name).app")
+        _ = try writeFixture("Contents/Info.plist", under: target, data: data)
+        let executable = try writeFixture("Contents/MacOS/macwipe", under: target)
+        try testManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        return target
+    }
+    let target = try app("macwipe")
+    let executable = target.appendingPathComponent("Contents/MacOS/macwipe")
+    var events: [String] = []
+    // Cancel is represented by not invoking the dedicated removal operation.
+    precondition(events.isEmpty && testManager.fileExists(atPath: target.path))
+    func refused(_ url: URL, executableURL: URL?, busy: Bool = false) throws {
+        do {
+            try AppRemoval.perform(bundleURL: url, executableURL: executableURL, busy: busy,
+                trash: { _ in events.append("trash") }, quit: { events.append("quit") })
+            preconditionFailure("Unsupported removal was allowed")
+        } catch { precondition(events.isEmpty) }
+    }
+    try refused(target, executableURL: executable, busy: true)
+    try refused(root.appendingPathComponent("missing.app"), executableURL: executable)
+    try refused(target, executableURL: root.appendingPathComponent("wrong-executable"))
+    let foreign = try app("foreign", identity: "example.other.app")
+    try refused(foreign, executableURL: foreign.appendingPathComponent("Contents/MacOS/macwipe"))
+    let alias = root.appendingPathComponent("alias.app")
+    try testManager.createSymbolicLink(at: alias, withDestinationURL: target)
+    try refused(alias, executableURL: executable)
+    let readOnly = try app("read-only")
+    try testManager.setAttributes([.posixPermissions: 0o555], ofItemAtPath: readOnly.path)
+    try refused(readOnly, executableURL: readOnly.appendingPathComponent("Contents/MacOS/macwipe"))
+    try testManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: readOnly.path)
+    do {
+        try AppRemoval.perform(bundleURL: target, executableURL: executable, busy: false,
+            trash: { _ in throw NSError(domain: "fixture", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Fixture Trash failure"]) },
+            quit: { events.append("quit") })
+        preconditionFailure("Trash failure was swallowed")
+    } catch { precondition(error.localizedDescription == "Fixture Trash failure" && events.isEmpty) }
+    try AppRemoval.perform(bundleURL: target, executableURL: executable, busy: false,
+        trash: { precondition($0.path == target.path); events.append("trash") }, quit: { events.append("quit") })
+    precondition(events == ["trash", "quit"])
+    let otherCopy = try app("macwipe-copy")
+    let scanner = FileWorker(home: root.appendingPathComponent("home"), systemRoot: root,
+        runningApplicationURL: target, trashItem: { _ in events.append("cleanup") })
+    let scan = scanner.scan()
+    precondition(!scan.categories["applications"]!.items.contains {
+        URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == target.resolvingSymlinksInPath().path
+    })
+    precondition(scan.categories["applications"]!.items.contains {
+        URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == otherCopy.resolvingSymlinksInPath().path
+    })
+    let rejected = scanner.cleanup(try selections([("applications", [target.path])]))
+    precondition(!rejected.errors.isEmpty && events == ["trash", "quit"])
+    print("PASS: cancel/no action, busy, missing/invalid/symlink/read-only bundles, Trash failure without quit, Trash before quit, running app excluded from ordinary cleanup; all mutations mocked.")
+}
+
 try runScannerTests()
+try runAppRemovalTests()
 if CommandLine.arguments.contains("--ui") {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)

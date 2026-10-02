@@ -158,6 +158,12 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
         switch action {
         case "requestScan":
             requestScan()
+        case "removeApplication":
+            guard body.count == 1 else {
+                send("onNativeError", BridgeError(action: action, message: "Invalid application removal request."))
+                return
+            }
+            removeApplication()
         case "keepFiles":
             // Do not enumerate, alter, or trash any file for this action.
             NSLog("macwipe: user chose Keep Files.")
@@ -192,6 +198,20 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
                 }
                 self.send("receiveScanData", result)
             }
+        }
+    }
+
+    private func removeApplication() {
+        let wasBusy = busy
+        busy = true
+        do {
+            try AppRemoval.perform(bundleURL: Bundle.main.bundleURL,
+                executableURL: Bundle.main.executableURL, busy: wasBusy,
+                trash: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) },
+                quit: { NSApplication.shared.terminate(nil) })
+        } catch {
+            busy = false
+            send("onNativeError", BridgeError(action: "removeApplication", message: error.localizedDescription))
         }
     }
 
@@ -265,6 +285,38 @@ private struct BridgeError: Encodable, Sendable {
     let message: String
 }
 
+private enum AppRemoval {
+    private enum Failure: String, LocalizedError {
+        case busy = "An operation is already running."
+        case invalid = "This is not a supported running macwipe app bundle."
+        case readOnly = "The app or its location is read-only."
+        var errorDescription: String? { rawValue }
+    }
+
+    static func perform(bundleURL: URL, executableURL: URL?, busy: Bool,
+                        trash: (URL) throws -> Void, quit: () -> Void) throws {
+        guard !busy else { throw Failure.busy }
+        let target = bundleURL.standardizedFileURL
+        let manager = FileManager.default
+        guard target.isFileURL, target.pathExtension.lowercased() == "app",
+              target.resolvingSymlinksInPath() == target,
+              !target.pathComponents.contains(".Trash"),
+              let bundle = Bundle(url: target), bundle.bundleIdentifier == "app.macwipe.native",
+              bundle.object(forInfoDictionaryKey: "CFBundleExecutable") as? String == "macwipe",
+              let executableURL, executableURL.standardizedFileURL == bundle.executableURL?.standardizedFileURL,
+              executableURL.resolvingSymlinksInPath() == executableURL.standardizedFileURL,
+              manager.isExecutableFile(atPath: executableURL.path) else { throw Failure.invalid }
+        guard try executableURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+            else { throw Failure.invalid }
+        let values = try target.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .volumeIsReadOnlyKey])
+        guard values.isDirectory == true, values.isSymbolicLink == false else { throw Failure.invalid }
+        guard values.volumeIsReadOnly == false, manager.isWritableFile(atPath: target.path),
+              manager.isWritableFile(atPath: target.deletingLastPathComponent().path) else { throw Failure.readOnly }
+        try trash(target)
+        quit()
+    }
+}
+
 private struct ScanItem: Encodable, Sendable {
     let id: String
     let category: String
@@ -316,10 +368,12 @@ private final class FileWorker: @unchecked Sendable {
     private let systemRoot: URL
     private let manager = FileManager.default
     private let trashItem: (URL) throws -> Void
+    private let runningApplicationURL: URL
     private var approved: [Category: [String: ApprovedItem]] = [:]
     private let staleAge: TimeInterval = 90 * 24 * 60 * 60
 
     init(home: URL? = nil, systemRoot: URL = URL(fileURLWithPath: "/"),
+         runningApplicationURL: URL = Bundle.main.bundleURL,
          trashItem: @escaping (URL) throws -> Void = {
              try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
          }) {
@@ -332,6 +386,7 @@ private final class FileWorker: @unchecked Sendable {
                         isDirectory: true)
         self.systemRoot = systemRoot
         self.trashItem = trashItem
+        self.runningApplicationURL = runningApplicationURL.resolvingSymlinksInPath().standardizedFileURL
     }
 
     func scan(now: Date = Date()) -> ScanData {
@@ -490,6 +545,7 @@ private final class FileWorker: @unchecked Sendable {
 
     private func scanEntry(_ url: URL, root: URL, category: Category,
                            now: Date, result: inout CategoryScan) {
+        guard !containsRunningApplication(url) else { return }
         do {
             let measured = try measure(url)
             guard let metadata = measured.entries[url.path] else { return }
@@ -567,6 +623,7 @@ private final class FileWorker: @unchecked Sendable {
             do {
                 let root = target.root
                 let item = target.measured
+                guard !containsRunningApplication(item.url) else { throw FileSafetyError.changed }
                 try validateRoot(root)
                 guard item.url.path.hasPrefix(root.path + "/"),
                       Self.resolvedPath(item.url) == item.url.path else {
@@ -590,6 +647,13 @@ private final class FileWorker: @unchecked Sendable {
     private func validateRoot(_ root: URL) throws {
         guard Self.resolvedPath(root) == root.path,
               try stamp(root).kind == S_IFDIR else { throw FileSafetyError.changed }
+    }
+
+    private func containsRunningApplication(_ url: URL) -> Bool {
+        guard runningApplicationURL.pathExtension.lowercased() == "app" else { return false }
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let running = runningApplicationURL.path
+        return path == running || path.hasPrefix(running + "/") || running.hasPrefix(path + "/")
     }
 
     private static func resolvedPath(_ url: URL) -> String? {
