@@ -128,7 +128,8 @@
           && item.homeRecommendationEligible
           && (isNative
             ? item.canClean === true
-            : item.canClean !== false && (key !== "downloads" || item.ageDays > 90)),
+            : item.canClean !== false && (key !== "downloads"
+              || Number.isFinite(item.modifiedAt) && item.modifiedAt < Date.now() / 1000 - 30 * 86400)),
       );
       items = uniqueItems(items);
       if (isNative) {
@@ -342,6 +343,12 @@
 
     const nameCell = document.createElement("td");
     nameCell.textContent = name;
+    if (item.kind === "older-download") {
+      const note = document.createElement("small");
+      note.className = "item-review-label";
+      note.textContent = "Not modified in over 30 days.";
+      nameCell.append(note);
+    }
     if (item.canClean === false) {
       const note = document.createElement("small");
       note.className = "item-review-label";
@@ -374,7 +381,7 @@
     const explanations = {
       "unmatched-support": "No matching installed app was found. This does not prove the folder is unused. It may contain settings, mods, or personal data.",
       cache: "Temporary app data listed from a cache location. Apps may recreate it after removal; review it before removing.",
-      "older-download": "A downloaded file listed because it is more than 90 days old. Age does not mean it is unnecessary; keep anything you still need.",
+      "older-download": "A downloaded file listed because it was not modified in over 30 days. Modification time does not establish when it was downloaded or last opened; keep anything you still need.",
       application: "An application listed in an application folder. Moving it to Trash does not run its vendor uninstaller and may leave support files behind.",
       "startup-file": "Startup configuration listed for review. Removing it may affect future launches and does not stop an already running service.",
       log: "Diagnostic information listed from a log location. Removing it may discard information useful for troubleshooting.",
@@ -393,6 +400,7 @@
       item.canClean === false ? "Read-only inventory. Cleanup is not available for this item." : "",
       item.path ? `Path: ${item.path}` : "",
       `Logical file size: ${size}`,
+      Number.isFinite(item.modifiedAt) ? `Modified: ${new Date(item.modifiedAt * 1000).toLocaleString()}` : "",
       item.info ? `Size/Info: ${item.info}` : "",
     ].filter(Boolean).join("\n");
   }
@@ -667,6 +675,7 @@
           id: file.id,
           category: file.category,
           path: file.path,
+          modifiedAt: file.modifiedAt,
           name: file.name,
           mb: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes / 1_000_000 : null,
           bytes: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes : null,

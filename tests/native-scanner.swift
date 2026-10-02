@@ -308,7 +308,43 @@ private func runAppRemovalTests() throws {
     print("PASS: cancel/no action, busy, missing/invalid/symlink/read-only bundles, Trash failure without quit, Trash before quit, running app excluded from ordinary cleanup; all mutations mocked.")
 }
 
+private func runDownloadRuleTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("download-rule/home")
+    let now = Date(timeIntervalSince1970: 2_000_000_000)
+    let cutoff = now.addingTimeInterval(-30 * 86400)
+    let recent = try writeFixture("Downloads/recent.zip", under: home)
+    let boundary = try writeFixture("Downloads/boundary.zip", under: home)
+    let older = try writeFixture("Downloads/older.zip", under: home)
+    _ = try writeFixture("Downloads/folder/nested.zip", under: home)
+    try testManager.setAttributes([.modificationDate: cutoff.addingTimeInterval(1)], ofItemAtPath: recent.path)
+    try testManager.setAttributes([.modificationDate: cutoff], ofItemAtPath: boundary.path)
+    try testManager.setAttributes([.modificationDate: cutoff.addingTimeInterval(-1)], ofItemAtPath: older.path)
+    let folder = home.appendingPathComponent("Downloads/folder")
+    try testManager.setAttributes([.modificationDate: cutoff.addingTimeInterval(-1)], ofItemAtPath: folder.path)
+    let link = home.appendingPathComponent("Downloads/link")
+    try testManager.createSymbolicLink(at: link, withDestinationURL: older)
+    var moved: [String] = []
+    let worker = FileWorker(home: home, systemRoot: nativeTestSystem, trashItem: { moved.append($0.path) })
+    let scan = worker.scan(now: now)
+    let items = scan.categories["downloads"]!.items
+    precondition(items.map(\.name) == ["older.zip"])
+    precondition(items[0].modifiedAt == cutoff.timeIntervalSince1970 - 1)
+    for path in [recent.path, boundary.path, folder.path, link.path] {
+        _ = worker.scan(now: now)
+        let result = worker.cleanup(try selections([("downloads", [path])]), now: now)
+        precondition(result.movedCount == 0 && !result.errors.isEmpty && moved.isEmpty)
+    }
+    _ = worker.scan(now: now)
+    let changedClock = worker.cleanup(try selections([("downloads", [items[0].path])]), now: now.addingTimeInterval(-2))
+    precondition(changedClock.movedCount == 0 && !changedClock.errors.isEmpty && moved.isEmpty)
+    _ = worker.scan(now: now)
+    let accepted = worker.cleanup(try selections([("downloads", [items[0].path])]), now: now)
+    precondition(accepted.movedCount == 1 && accepted.errors.isEmpty && moved == [items[0].path])
+    print("PASS: strict 30-day modification boundary, actual timestamp, excluded types, and removal-time eligibility; Trash mocked.")
+}
+
 try runScannerTests()
+try runDownloadRuleTests()
 try runAppRemovalTests()
 if CommandLine.arguments.contains("--ui") {
     let app = NSApplication.shared

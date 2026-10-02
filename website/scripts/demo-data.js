@@ -105,7 +105,7 @@
           bulkSelectionEligible: false,
           homeRecommendationEligible: true,
           name: "Previous installer.dmg",
-          ageDays: 120,
+          modifiedAt: Date.now() / 1000 - 120 * 86400,
           mb: 420,
           details:
             "An example downloaded installer. Check that you can obtain it again before removing your real installer.",
@@ -117,7 +117,7 @@
           bulkSelectionEligible: false,
           homeRecommendationEligible: true,
           name: "Project archive.zip",
-          ageDays: 180,
+          modifiedAt: Date.now() / 1000 - 180 * 86400,
           mb: 156,
           details:
             "An example compressed project. Confirm its contents are extracted and backed up before deleting an archive.",
@@ -129,7 +129,7 @@
           bulkSelectionEligible: false,
           homeRecommendationEligible: true,
           name: "Reference notes.pdf",
-          ageDays: 95,
+          modifiedAt: Date.now() / 1000 - 95 * 86400,
           mb: 12,
           details:
             "An example downloaded document. Personal documents should always be reviewed individually.",

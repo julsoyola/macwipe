@@ -329,6 +329,7 @@ private struct ScanItem: Encodable, Sendable {
     let reviewClassification: String
     let bulkSelectionEligible: Bool
     let homeRecommendationEligible: Bool
+    let modifiedAt: TimeInterval
 }
 
 private struct CategoryScan: Encodable, Sendable {
@@ -351,7 +352,7 @@ private struct VolumeStorage: Encodable, Sendable {
 private struct ScanData: Encodable, Sendable {
     let categories: [String: CategoryScan]
     let storage: VolumeStorage?
-    let staleDownloadDays = 90
+    let staleDownloadDays = 30
     let sizeMeaning = "Logical file bytes; not allocated or reclaimable disk space."
 }
 
@@ -370,7 +371,7 @@ private final class FileWorker: @unchecked Sendable {
     private let trashItem: (URL) throws -> Void
     private let runningApplicationURL: URL
     private var approved: [Category: [String: ApprovedItem]] = [:]
-    private let staleAge: TimeInterval = 90 * 24 * 60 * 60
+    private let staleAge: TimeInterval = 30 * 24 * 60 * 60
 
     init(home: URL? = nil, systemRoot: URL = URL(fileURLWithPath: "/"),
          runningApplicationURL: URL = Bundle.main.bundleURL,
@@ -551,15 +552,14 @@ private final class FileWorker: @unchecked Sendable {
             guard let metadata = measured.entries[url.path] else { return }
             let nextBytes = try adding(result.bytes, measured.bytes)
             let eligible = category != .trash && metadata.kind != S_IFLNK
-                && (category != .downloads || (metadata.kind == S_IFREG
-                    && Double(metadata.modifiedSeconds) < now.timeIntervalSince1970 - staleAge))
+                && (category != .downloads || eligibleDownload(metadata, url: url, root: root, now: now))
             if eligible {
                 // Performance inventories resolved system logs and user diagnostic reports.
                 // Neither these locations nor startup configurations have cleanup eligibility.
                 let canClean = category != .startup && category != .performance
                 if canClean {
                     result.eligibleBytes = try adding(result.eligibleBytes, measured.bytes)
-                    approved[category, default: [:]][url.path] = ApprovedItem(root: root, measured: measured)
+                    approved[category, default: [:]][url.path] = ApprovedItem(root: root, category: category, measured: measured)
                 }
                 let unmatched = category == .applications && root.lastPathComponent == "Application Support"
                 let kind: String
@@ -579,7 +579,8 @@ private final class FileWorker: @unchecked Sendable {
                     kind: kind,
                     reviewClassification: category == .caches ? "temporary" : "review-carefully",
                     bulkSelectionEligible: canClean && category == .caches,
-                    homeRecommendationEligible: canClean && (category == .caches || category == .downloads)))
+                    homeRecommendationEligible: canClean && (category == .caches || category == .downloads),
+                    modifiedAt: Double(metadata.modifiedSeconds) + Double(metadata.modifiedNanoseconds) / 1_000_000_000))
             }
             result.bytes = nextBytes
         } catch {
@@ -593,7 +594,7 @@ private final class FileWorker: @unchecked Sendable {
         }
     }
 
-    func cleanup(_ selections: [CleanupSelection]) -> CleanupResult {
+    func cleanup(_ selections: [CleanupSelection], now: Date = Date()) -> CleanupResult {
         var result = CleanupResult()
         // Consume the approval once, including failed attempts.
         let snapshot = approved
@@ -637,6 +638,10 @@ private final class FileWorker: @unchecked Sendable {
                 // Compare every entry; do not trash a directory changed since review.
                 let current = try measure(item.url)
                 guard current.entries == item.entries else { throw FileSafetyError.changed }
+                if target.category == .downloads {
+                    guard let metadata = current.entries[item.url.path],
+                          eligibleDownload(metadata, url: item.url, root: root, now: now) else { throw FileSafetyError.changed }
+                }
                 let nextBytes = try adding(result.movedBytes, current.bytes)
                 // The sole mutation API. No permanent deletion or fallback.
                 try trashItem(item.url)
@@ -690,7 +695,14 @@ private final class FileWorker: @unchecked Sendable {
 
     private struct ApprovedItem {
         let root: URL
+        let category: Category
         let measured: MeasuredItem
+    }
+
+    private func eligibleDownload(_ metadata: FileStamp, url: URL, root: URL, now: Date) -> Bool {
+        let modified = Double(metadata.modifiedSeconds) + Double(metadata.modifiedNanoseconds) / 1_000_000_000
+        return metadata.kind == S_IFREG && url.deletingLastPathComponent().path == root.path
+            && modified < now.timeIntervalSince1970 - staleAge
     }
 
     private func stamp(_ url: URL) throws -> FileStamp {

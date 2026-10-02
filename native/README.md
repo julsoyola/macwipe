@@ -33,7 +33,7 @@ to keep release ZIPs out of the bundled website.
 | --- | --- |
 | Storage | Overview of Caches, Logs, Trash totals, and stale Downloads |
 | Caches | `~/Library/Caches` |
-| Downloads | Top-level regular files older than 90 days in `~/Downloads` |
+| Downloads | Top-level regular files not modified in over 30 days in `~/Downloads` |
 | Applications | `/Applications`, `~/Applications`, unmatched folders in `~/Library/Application Support` |
 | Startup | `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons` |
 | Performance | `/var/log`, `~/Library/Logs/DiagnosticReports` |

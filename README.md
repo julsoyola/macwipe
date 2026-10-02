@@ -74,8 +74,8 @@ Requires macOS 13 or newer and the Xcode command-line tools. Build and launch:
 All seven native tabs scan real local paths: Storage, Caches, Downloads,
 Applications, Startup, Performance, and Privacy. Native rows support file
 selection and review, and confirmed selections move to Trash. Downloads are
-eligible only when they are top-level files
-older than 90 days; folders and recent downloads stay in place. Trash is shown
+eligible only when they are top-level regular files not modified in over
+30 days; folders, symlinks, and recent files stay in place. Trash is shown
 as a total and is never emptied. Unreadable entries are skipped without
 disabling accessible siblings. Empty tabs contain no example data.
 
@@ -129,7 +129,7 @@ the manager; JSON output cannot bypass confirmation.
 Supported cleanup candidates are individual top-level Downloads files, pip's
 `Library/Caches/pip/http-v2` and `Library/Caches/pip/wheels` directories, and
 Homebrew cleanup with a reviewed dry-run. Python Downloads selection does not
-use the Swift manager's 90-day filter. Files and pip caches move to Trash;
+use the Swift manager's 30-day modification filter. Files and pip caches move to Trash;
 Homebrew cleanup can permanently remove stale downloads and old versions.
 Applications and startup settings are inventory/manual review only.
 
