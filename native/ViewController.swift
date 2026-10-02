@@ -1251,6 +1251,10 @@ private struct CPUReading: Encodable, Sendable {
     let cpuPercent: Double?
     let cpuState: String
     let sampledAt: TimeInterval?
+    var memoryPressure: String?
+    var thermalState: String?
+    var thermalSampledAt: TimeInterval?
+    var memorySampledAt: TimeInterval?
 }
 
 private struct CPUCalculation {
@@ -1278,11 +1282,25 @@ private final class CPUSampler {
     private var generation = 0
     private let readTicks: () -> [UInt32]?
     private let publish: (CPUReading) -> Void
+    private let readThermal: () -> ProcessInfo.ThermalState
+    private let observePressure: Bool
+    private var pressureSource: DispatchSourceMemoryPressure?
+    private var thermalObserver: NSObjectProtocol?
+    private var pressureState = "Unavailable"
+    private var pressureSampledAt: TimeInterval?
+    private var lastReading = CPUReading(cpuPercent: nil, cpuState: "measuring", sampledAt: nil)
     var isRunning: Bool { timer != nil }
-    init(readTicks: @escaping () -> [UInt32]? = CPUSampler.readTicks, publish: @escaping (CPUReading) -> Void) {
-        self.readTicks = readTicks; self.publish = publish
+    init(readTicks: @escaping () -> [UInt32]? = CPUSampler.readTicks,
+         readThermal: @escaping () -> ProcessInfo.ThermalState = { ProcessInfo.processInfo.thermalState },
+         observePressure: Bool = true, publish: @escaping (CPUReading) -> Void) {
+        self.readTicks = readTicks; self.readThermal = readThermal
+        self.observePressure = observePressure; self.publish = publish
     }
-    deinit { timer?.invalidate() }
+    deinit {
+        timer?.invalidate()
+        pressureSource?.setEventHandler(handler: nil); pressureSource?.cancel()
+        if let thermalObserver { NotificationCenter.default.removeObserver(thermalObserver) }
+    }
     func start() {
         guard timer == nil else { return }
         calculation.reset(); sample()
@@ -1295,14 +1313,54 @@ private final class CPUSampler {
             }
         }
         timer?.tolerance = 0.4
+        if observePressure {
+            // Public Dispatch source. Its initial state is not a pressure reading.
+            // https://developer.apple.com/documentation/dispatch/dispatchsource/makememorypressuresource(eventmask:queue:)
+            let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
+            source.setEventHandler { [weak self] in
+                let events = source.data
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == token, self.timer != nil else { return }
+                    self.pressureEvent(events)
+                }
+            }
+            pressureSource = source; source.activate()
+        }
+        // Access thermalState before registering, as required by Foundation.
+        _ = readThermal()
+        thermalObserver = NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == token, self.timer != nil else { return }
+                    self.publishCombined()
+                }
+            }
     }
     func stop() {
         guard timer != nil else { return }
         generation += 1
         timer?.invalidate(); timer = nil; calculation.reset()
-        publish(CPUReading(cpuPercent: nil, cpuState: "unavailable", sampledAt: nil))
+        pressureSource?.setEventHandler(handler: nil); pressureSource?.cancel(); pressureSource = nil
+        if let thermalObserver { NotificationCenter.default.removeObserver(thermalObserver) }
+        thermalObserver = nil; pressureState = "Unavailable"; pressureSampledAt = nil
+        publish(CPUReading(cpuPercent: nil, cpuState: "unavailable", sampledAt: nil,
+                           memoryPressure: "Unavailable", thermalState: "Unavailable"))
     }
-    func sample() { publish(calculation.sample(readTicks())) }
+    func sample() { lastReading = calculation.sample(readTicks()); publishCombined() }
+    func pressureEvent(_ events: DispatchSource.MemoryPressureEvent) {
+        guard timer != nil else { return }
+        pressureState = MetricStates.pressure(events); pressureSampledAt = Date().timeIntervalSince1970
+        publishCombined()
+    }
+    private func publishCombined() {
+        if let date = lastReading.sampledAt, Date().timeIntervalSince1970 - date > 6.5 {
+            lastReading = CPUReading(cpuPercent: nil, cpuState: "unavailable", sampledAt: nil)
+        }
+        lastReading.memoryPressure = pressureState; lastReading.memorySampledAt = pressureSampledAt
+        lastReading.thermalState = MetricStates.thermal(readThermal())
+        lastReading.thermalSampledAt = Date().timeIntervalSince1970
+        publish(lastReading)
+    }
     // Public Mach host statistics aggregate ticks across CPUs; no subprocess.
     // https://developer.apple.com/documentation/kernel/host_cpu_load_info_t
     nonisolated private static func readTicks() -> [UInt32]? {
@@ -1318,6 +1376,24 @@ private final class CPUSampler {
         }
         guard result == KERN_SUCCESS, count >= expected else { return nil }
         return [info.cpu_ticks.0, info.cpu_ticks.1, info.cpu_ticks.2, info.cpu_ticks.3]
+    }
+}
+
+private enum MetricStates {
+    static func pressure(_ events: DispatchSource.MemoryPressureEvent) -> String {
+        if events.contains(.critical) { return "Critical" }
+        if events.contains(.warning) { return "Warning" }
+        if events.contains(.normal) { return "Normal" }
+        return "Unavailable"
+    }
+    static func thermal(_ state: ProcessInfo.ThermalState?) -> String {
+        switch state {
+        case .nominal: return "Normal"
+        case .fair: return "Elevated"
+        case .serious: return "High"
+        case .critical: return "Critical"
+        default: return "Unavailable"
+        }
     }
 }
 

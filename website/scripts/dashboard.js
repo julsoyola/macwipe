@@ -802,8 +802,9 @@
     if (Object.hasOwn(payload, "thermalState")) document.querySelector("#thermal-value").textContent =
       ["Normal", "Elevated", "High", "Critical"].includes(payload.thermalState) ? payload.thermalState : "Unavailable";
     for (const id of ["memory-value", "thermal-value"]) document.getElementById(id).dataset.state = document.getElementById(id).textContent.toLowerCase();
-    document.querySelector("#metric-updated").textContent = Number.isFinite(payload.sampledAt)
-      ? `${isNative ? "Sampled" : "Example updated"}: ${new Date(payload.sampledAt * 1000).toLocaleTimeString()}` : "No current sample.";
+    const sampledAt = payload.sampledAt ?? payload.thermalSampledAt;
+    document.querySelector("#metric-updated").textContent = Number.isFinite(sampledAt)
+      ? `${isNative ? "Sampled" : "Example updated"}: ${new Date(sampledAt * 1000).toLocaleTimeString()}` : "No current sample.";
   }
   window.addEventListener("macwipe:metrics", ({ detail }) => renderMetrics(detail));
   document.addEventListener("visibilitychange", () => {
