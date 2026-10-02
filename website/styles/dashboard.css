@@ -1,0 +1,186 @@
+.dashboard-page {
+  padding: 40px 24px;
+}
+.dashboard {
+  width: min(1000px, 100%);
+  margin: auto;
+}
+.back-link {
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+.demo-tag {
+  font-size: 12px;
+}
+.dashboard-layout {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+}
+.sidebar {
+  padding: 24px 16px;
+  border-right: 2px solid var(--ink);
+  background: var(--status);
+}
+.disk-icon {
+  display: block;
+  margin: 0 auto 24px;
+}
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sidebar [aria-current="page"] {
+  background: var(--button);
+  color: #fff;
+  font-weight: bold;
+}
+.content-pane {
+  min-width: 0;
+  padding: 28px 24px;
+}
+.section-header h1 {
+  font-size: 30px;
+}
+.section-header p {
+  margin: 8px 0 24px;
+}
+.toolbar,
+.bottom-bar,
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.toolbar .question-row,
+.bottom-bar .question-row,
+.dialog-actions .question-row {
+  width: auto;
+  justify-content: center;
+}
+.preview-note {
+  margin: 16px 0 20px;
+  font-size: 12px;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.item-list {
+  width: 100%;
+  min-width: 440px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+.item-list caption {
+  padding: 10px 0;
+  border-top: 2px solid var(--ink);
+  font: bold 17px var(--serif);
+  text-align: left;
+}
+.item-list th,
+.item-list td {
+  padding: 14px 8px;
+  border-bottom: 2px solid var(--ink);
+  overflow-wrap: anywhere;
+}
+.item-list thead {
+  background: var(--status);
+}
+.item-list th:first-child,
+.item-list td:first-child {
+  width: 76px;
+  text-align: center;
+  white-space: nowrap;
+}
+.item-list th:nth-child(3) {
+  width: 125px;
+}
+.item-list th:last-child {
+  width: 96px;
+}
+.item-list tbody tr:hover,
+.item-list tbody tr:has(input:checked) {
+  background: var(--status);
+}
+.item-list input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--button);
+  cursor: pointer;
+}
+.item-list .question-row {
+  white-space: nowrap;
+  width: auto;
+  min-height: 36px;
+  padding: 5px 8px;
+}
+.bottom-bar {
+  justify-content: space-between;
+  padding-top: 20px;
+  font-size: 12px;
+}
+.dialog-body {
+  padding: 20px;
+}
+.dialog-body > p:first-child {
+  margin-top: 0;
+}
+.review-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding-left: 22px;
+}
+.review-list li {
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+.demo-notice-box {
+  padding: 12px;
+  border: 2px solid var(--ink);
+  background: var(--status);
+  font-size: 12px;
+}
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+@media (max-width: 700px) {
+  .dashboard-page {
+    padding: 20px 12px;
+  }
+  .dashboard-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dashboard .title-bar {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .demo-tag {
+    margin-left: auto;
+  }
+  .sidebar {
+    border-right: 0;
+    border-bottom: 2px solid var(--ink);
+    padding: 16px;
+  }
+  .disk-icon {
+    width: 32px;
+    height: 32px;
+    margin: 0 0 16px;
+  }
+  .sidebar nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sidebar .question-row {
+    width: auto;
+    font-size: 12px;
+  }
+  .content-pane {
+    padding: 24px 16px;
+  }
+}

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="macwipe: a quiet, simple scrubber for your Mac. Try the local web dashboard demo."
+    />
+    <title>macwipe</title>
+    <link rel="stylesheet" href="styles/theme.css" />
+    <script src="scripts/ui.js" defer></script>
+    <script src="scripts/landing.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="page">
+      <main
+        id="main"
+        class="window landing-window"
+        aria-labelledby="brand-heading"
+        tabindex="-1"
+      >
+        <header class="title-bar">
+          <span class="title-bar-label">macwipe</span>
+          <span class="window-control" aria-hidden="true">−</span>
+        </header>
+        <div class="landing-content">
+          <svg
+            class="folder-icon"
+            width="48"
+            height="48"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <path d="M1 3h5l2 2h7v8H1z" fill="#FFF6EC" stroke="#542B45" />
+            <path d="M2 4h4l2 2h6v6H2z" fill="#A44875" />
+            <path d="M4 8h8v1H4zm0 2h5v1H4z" fill="#FFF6EC" />
+          </svg>
+          <h1 id="brand-heading">macwipe</h1>
+          <p class="tagline">A quiet, simple scrubber for your Mac.</p>
+          <button class="download-control" type="button" disabled>
+            <img
+              class="pixel-icon"
+              src="assets/disk.svg"
+              width="18"
+              height="18"
+              alt=""
+            />
+            Download helper coming soon
+          </button>
+          <a class="demo-link primary-btn" href="dashboard.html"
+            >Launch Web Dashboard Demo →</a
+          >
+          <div class="divider" aria-hidden="true"></div>
+          <p class="questions-label">frequently asked</p>
+          <div class="questions-list">
+            <button
+              class="question-row"
+              type="button"
+              data-question="data"
+              aria-haspopup="dialog"
+              aria-controls="question-chat"
+              aria-expanded="false"
+            >
+              <span class="question-copy"
+                ><img
+                  class="pixel-icon"
+                  src="assets/message.svg"
+                  width="18"
+                  height="18"
+                  alt=""
+                />
+                <span>what happens with my data?</span></span
+              >
+              <span class="chevron" aria-hidden="true">›</span>
+            </button>
+            <button
+              class="question-row"
+              type="button"
+              data-question="local"
+              aria-haspopup="dialog"
+              aria-controls="question-chat"
+              aria-expanded="false"
+            >
+              <span class="question-copy"
+                ><img
+                  class="pixel-icon"
+                  src="assets/message.svg"
+                  width="18"
+                  height="18"
+                  alt=""
+                />
+                <span>does it only scan my own Mac?</span></span
+              >
+              <span class="chevron" aria-hidden="true">›</span>
+            </button>
+            <button
+              class="question-row"
+              type="button"
+              data-question="safe"
+              aria-haspopup="dialog"
+              aria-controls="question-chat"
+              aria-expanded="false"
+            >
+              <span class="question-copy"
+                ><img
+                  class="pixel-icon"
+                  src="assets/message.svg"
+                  width="18"
+                  height="18"
+                  alt=""
+                />
+                <span>is it safe to delete these files?</span></span
+              >
+              <span class="chevron" aria-hidden="true">›</span>
+            </button>
+          </div>
+        </div>
+        <footer class="status-strip">
+          macwipe v1.0 · 100% offline &amp; local
+        </footer>
+      </main>
+    </div>
+    <dialog
+      class="window modal-dialog"
+      data-chat-prefix="chat"
+      id="question-chat"
+      aria-labelledby="chat-title"
+    >
+      <header class="title-bar">
+        <span class="title-bar-label" id="chat-title">mac-chat</span>
+        <button
+          class="window-control close-control"
+          id="chat-close"
+          type="button"
+          data-close
+          aria-label="Close question chat"
+          autofocus
+        >
+          ×
+        </button>
+      </header>
+      <div data-chat-content></div>
+    </dialog>
+  </body>
+</html>

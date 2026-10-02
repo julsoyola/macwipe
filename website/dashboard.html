@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Try macwipe with local example data. No files are scanned or removed."
+    />
+    <title>macwipe · Storage · Demo</title>
+    <link rel="stylesheet" href="styles/theme.css" />
+    <link rel="stylesheet" href="styles/dashboard.css" />
+    <script src="scripts/ui.js" defer></script>
+    <script src="scripts/demo-data.js" defer></script>
+    <script src="scripts/dashboard.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content-pane">Skip to content</a>
+    <div class="page dashboard-page">
+      <main class="window dashboard" aria-label="macwipe dashboard demo">
+        <header class="title-bar">
+          <a class="back-link" href="index.html">← macwipe</a>
+          <span class="title-bar-label">macwipe</span>
+          <span class="demo-tag">Demo · Example data</span>
+          <span class="window-control" aria-hidden="true">−</span>
+        </header>
+        <div class="dashboard-layout">
+          <aside class="sidebar">
+            <img
+              class="disk-icon pixel-icon"
+              src="assets/disk.svg"
+              width="48"
+              height="48"
+              alt=""
+            />
+            <nav aria-label="Dashboard categories">
+              <button
+                class="question-row"
+                type="button"
+                data-category="storage"
+                aria-current="page"
+              >
+                Storage
+              </button>
+              <button class="question-row" type="button" data-category="caches">
+                Caches
+              </button>
+              <button
+                class="question-row"
+                type="button"
+                data-category="downloads"
+              >
+                Downloads
+              </button>
+              <button
+                class="question-row"
+                type="button"
+                data-category="applications"
+              >
+                Applications
+              </button>
+              <button
+                class="question-row"
+                type="button"
+                data-category="startup"
+              >
+                Startup
+              </button>
+              <button
+                class="question-row"
+                type="button"
+                data-category="performance"
+              >
+                Performance
+              </button>
+              <button
+                class="question-row"
+                type="button"
+                data-category="privacy"
+              >
+                Privacy
+              </button>
+            </nav>
+          </aside>
+          <section
+            id="content-pane"
+            class="content-pane"
+            aria-labelledby="dashboard-heading"
+            tabindex="-1"
+          >
+            <header class="section-header">
+              <h1 id="dashboard-heading">Storage</h1>
+              <p id="category-description">
+                Review example files taking up space.
+              </p>
+            </header>
+            <div class="toolbar" role="group" aria-label="Scan controls">
+              <button
+                class="question-row"
+                id="btn-preview-scan"
+                data-action="preview"
+                type="button"
+              >
+                Preview scan
+              </button>
+              <button
+                class="question-row"
+                id="btn-select-all"
+                data-action="select-all"
+                type="button"
+              >
+                Select all
+              </button>
+            </div>
+            <p class="preview-note">
+              Example data only. No files are read or changed.
+            </p>
+            <noscript
+              ><p>Enable JavaScript to try the interactive demo.</p></noscript
+            >
+            <div
+              class="table-scroll"
+              role="region"
+              aria-label="Example items"
+              tabindex="0"
+            >
+              <table class="item-list">
+                <caption id="list-caption">
+                  Example storage items
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Select</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Size / Info</th>
+                    <th scope="col">Details</th>
+                  </tr>
+                </thead>
+                <tbody id="item-table-body"></tbody>
+              </table>
+            </div>
+            <footer class="bottom-bar">
+              <span id="selection-status" role="status"
+                >Selected: 0 items · 0 MB</span
+              >
+              <button
+                class="question-row primary-btn"
+                id="btn-review-selected"
+                data-action="review"
+                aria-haspopup="dialog"
+                aria-controls="review-dialog"
+                type="button"
+                disabled
+              >
+                Review selected
+              </button>
+            </footer>
+          </section>
+        </div>
+        <footer class="status-strip">macOS helper · Demo · Example data</footer>
+      </main>
+    </div>
+    <dialog
+      class="window modal-dialog"
+      data-chat-prefix="details"
+      id="details-dialog"
+      aria-labelledby="details-title"
+    >
+      <header class="title-bar">
+        <span class="title-bar-label" id="details-title"
+          >macwipe - details</span
+        >
+        <button
+          class="window-control close-control"
+          type="button"
+          data-close
+          aria-label="Close details dialog"
+          autofocus
+        >
+          ×
+        </button>
+      </header>
+      <div data-chat-content></div>
+    </dialog>
+    <dialog
+      class="window modal-dialog"
+      id="review-dialog"
+      aria-labelledby="review-title"
+      aria-describedby="review-notice"
+    >
+      <header class="title-bar">
+        <span class="title-bar-label" id="review-title"
+          >macwipe - review selected</span
+        >
+        <button
+          class="window-control close-control"
+          type="button"
+          data-close
+          aria-label="Close review dialog"
+          autofocus
+        >
+          ×
+        </button>
+      </header>
+      <div class="dialog-body">
+        <p>Selected items for simulated cleanup:</p>
+        <ul id="review-items-list" class="review-list"></ul>
+        <p><strong>Total:</strong> <span id="review-total-size">0 MB</span></p>
+        <p id="review-notice" class="demo-notice-box">
+          Demo only. Simulation clears your selections. No files or settings are
+          changed.
+        </p>
+        <div class="dialog-actions">
+          <button class="question-row" type="button" data-close>Back</button>
+          <button
+            class="question-row primary-btn"
+            id="review-simulate-btn"
+            data-action="simulate"
+            type="button"
+          >
+            Simulate cleanup
+          </button>
+        </div>
+      </div>
+      <footer class="status-strip">Review first. You stay in control.</footer>
+    </dialog>
+  </body>
+</html>
