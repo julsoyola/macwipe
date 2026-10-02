@@ -12,7 +12,7 @@
   padding: 40px 24px;
 }
 .native-mode .dashboard-page { padding: 0; min-height: 100vh; }
-.native-mode .dashboard { width: 100%; margin: 0; }
+.native-mode .dashboard { width: 100%; margin: 0; box-shadow: none; }
 .native-mode .sidebar { padding-top: 14px; padding-bottom: 14px; }
 .native-mode .disk-icon { margin-bottom: 12px; }
 .native-mode[data-current-view="home"] .content-pane { padding: 12px 16px; }
