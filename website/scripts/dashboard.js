@@ -619,6 +619,7 @@
   }
 
   const actions = {
+    "activity-monitor": () => fixedAction("openActivityMonitor", "Open Applications → Utilities → Activity Monitor."),
     "cancel-scan": () => window.macwipeUI?.cancelScan(),
     "explore-storage": () => switchCategory("explorer"),
     "back-home": () => switchCategory("home"),
@@ -788,6 +789,27 @@
     if (currentCategory === "explorer") renderCategoryList("explorer");
   }
   window.addEventListener("macwipe:explorer", ({ detail }) => receiveExplorer(detail));
+  function renderMetrics(payload) {
+    if (Object.hasOwn(payload, "cpuPercent") || Object.hasOwn(payload, "cpuState")) {
+      const valid = Number.isFinite(payload.cpuPercent) && payload.cpuPercent >= 0 && payload.cpuPercent <= 100;
+      document.querySelector("#cpu-value").textContent = valid ? `${Math.round(payload.cpuPercent)}%`
+        : payload.cpuState === "measuring" ? "Measuring" : "Unavailable";
+      const meter = document.querySelector("#cpu-meter"); meter.hidden = !valid; meter.value = valid ? payload.cpuPercent : 0;
+    }
+    if (Object.hasOwn(payload, "memoryPressure")) document.querySelector("#memory-value").textContent =
+      ["Normal", "Warning", "Critical"].includes(payload.memoryPressure) ? payload.memoryPressure : "Unavailable";
+    if (Object.hasOwn(payload, "thermalState")) document.querySelector("#thermal-value").textContent =
+      ["Normal", "Elevated", "High", "Critical"].includes(payload.thermalState) ? payload.thermalState : "Unavailable";
+    for (const id of ["memory-value", "thermal-value"]) document.getElementById(id).dataset.state = document.getElementById(id).textContent.toLowerCase();
+    document.querySelector("#metric-updated").textContent = Number.isFinite(payload.sampledAt)
+      ? `${isNative ? "Sampled" : "Example updated"}: ${new Date(payload.sampledAt * 1000).toLocaleTimeString()}` : "No current sample.";
+  }
+  window.addEventListener("macwipe:metrics", ({ detail }) => renderMetrics(detail));
+  document.querySelector("#metric-example-label").hidden = isNative;
+  if (!isNative) {
+    document.querySelector(".system-details summary").textContent = "Examples";
+    renderMetrics({ cpuPercent: 23, memoryPressure: "Normal", thermalState: "Normal", sampledAt: Date.now() / 1000 });
+  }
   window.addEventListener("macwipe:busy", ({ detail }) => {
     document.querySelector("#btn-cancel-scan").hidden = !["requestScan", "requestExplorer"].includes(detail.action);
   });
@@ -832,7 +854,7 @@
     openDetails(`Tell me about ${item.name}.`, itemDetails(item));
   }
   for (const event of ["action", "error"]) window.addEventListener(`macwipe:${event}`, ({ detail }) => {
-    if (["showInFinder", "openLoginItems", "openStorageSettings"].includes(detail.action)) {
+    if (["showInFinder", "openLoginItems", "openStorageSettings", "openActivityMonitor"].includes(detail.action)) {
       document.querySelector("#details-action-status").textContent = detail.message;
       previewNote.textContent = detail.message;
     }

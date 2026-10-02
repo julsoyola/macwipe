@@ -214,7 +214,12 @@
                   Nothing is removed automatically. Files moved to Trash still occupy space.
                 </p>
               </section>
-              <p class="home-system-status" role="status">System status: Not available yet.</p>
+              <div class="home-system-status" aria-label="Current system activity">
+                <span class="metric"><img src="assets/cpu.svg" width="16" height="16" alt="" />CPU activity <meter id="cpu-meter" min="0" max="100" value="0" aria-label="CPU activity" hidden></meter><strong id="cpu-value">Measuring</strong></span>
+                <span class="metric"><img src="assets/memory.svg" width="16" height="16" alt="" />Memory pressure <strong id="memory-value">Unavailable</strong></span>
+                <span class="metric"><img src="assets/thermal.svg" width="16" height="16" alt="" />Thermal state <strong id="thermal-value">Unavailable</strong></span>
+                <details class="system-details"><summary>Details</summary><p id="metric-example-label" hidden>Demo examples. These are fictional, stable readings.</p><p>Current system activity; file cleanup does not guarantee better performance.</p><p>High readings suggest investigating the current workload in Activity Monitor.</p><p id="metric-updated">No current sample.</p><button class="question-row" type="button" data-action="activity-monitor">Open Activity Monitor</button></details>
+              </div>
             </div>
             <div
               class="toolbar"

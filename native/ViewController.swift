@@ -205,6 +205,10 @@ final class ViewController: NSViewController, WKNavigationDelegate, WKScriptMess
                     }
                 }
             }
+        case "openActivityMonitor":
+            guard body.count == 1 else { return }
+            let opened = NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+            send("onActionComplete", BridgeError(action: action, message: opened ? "Opened Activity Monitor." : "Open Applications → Utilities → Activity Monitor."))
         case "openLoginItems", "openStorageSettings":
             guard body.count == 1 else { return }
             let login = action == "openLoginItems"

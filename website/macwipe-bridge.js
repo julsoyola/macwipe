@@ -131,6 +131,8 @@
     setKept(id, kept) { return post("setKept", { id, kept }); },
     openLoginItems() { return post("openLoginItems"); },
     openStorageSettings() { return post("openStorageSettings"); },
+    openActivityMonitor() { return post("openActivityMonitor"); },
+    receiveMetrics(payload) { emit("metrics", payload); },
     explore(id) { return postScan("requestExplorer", id ? { id } : {}); },
     receiveExplorerData(payload) { if (acceptScan(payload)) emit("explorer", payload); },
     cancelScan() {
