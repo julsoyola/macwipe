@@ -574,6 +574,40 @@ private func runBulkPolicyTests() throws {
     print("PASS: legacy bulk includes only recognized caches; review-carefully category bulk rejected; individual unknown-cache cleanup preserved; Trash mocked.")
 }
 
+private func runExplorerBudgetTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("explorer-budget/home")
+    let system = nativeTestRoot.appendingPathComponent("explorer-budget/system")
+    for name in ["Downloads", "Documents", "Desktop", "Movies", "Music", "Pictures", "Applications"] {
+        try testManager.createDirectory(at: home.appendingPathComponent(name), withIntermediateDirectories: true)
+    }
+    try testManager.createDirectory(at: system.appendingPathComponent("Applications"), withIntermediateDirectories: true)
+    for index in 0..<8 { _ = try writeFixture("Downloads/folder/file-\(index)", under: home) }
+    _ = try writeFixture("Documents/file", under: home)
+    let bounded = StorageExplorer(home: home, systemRoot: system, maximumEntries: 4, cloudOnly: { _ in false })
+    let result = bounded.scan()
+    precondition(result.status == "partial" && result.scanLimitReached && result.processedCount == 4)
+    precondition(result.items.first!.bytes! > 0 && result.items.first!.status == "partial")
+    precondition(result.items.dropFirst().allSatisfy { $0.bytes == nil && $0.status == "not-scanned" })
+    let drilled = try bounded.drill(id: result.items.first!.id)
+    precondition(drilled.scanLimitReached && drilled.status == "partial" && drilled.processedCount == 4)
+    precondition(drilled.items.first!.bytes! > 0 && drilled.items.allSatisfy { !$0.canClean })
+    var tick: TimeInterval = 0
+    let timed = StorageExplorer(home: home, systemRoot: system, budgetSeconds: 0.05,
+        monotonicNow: { defer { tick += 0.01 }; return tick }, cloudOnly: { _ in false }).scan()
+    precondition(timed.scanLimitReached && timed.status == "partial" && timed.processedCount < 100_000)
+    precondition(timed.items.contains { $0.status == "not-scanned" && $0.bytes == nil })
+    let cancelled = ScanControl(); cancelled.cancel()
+    let oldID = drilled.items.first!.id
+    let stopped = bounded.scan(control: cancelled)
+    precondition(stopped.status == "cancelled" && !stopped.scanLimitReached)
+    let retained = try bounded.url(id: oldID)
+    precondition(retained.path == drilled.items.first!.path)
+    print("PASS: explorer shared entry/time budgets, partial measured results, unvisited roots not scanned, bounded drill, and cancellation retains prior inventory.")
+}
+
+if CommandLine.arguments.contains("--explorer-budget") {
+    try runExplorerBudgetTests()
+} else {
 try runScannerTests()
 try runBulkPolicyTests()
 try runCleanupReportTests()
@@ -581,6 +615,7 @@ MainActor.assumeIsolated { runCPUTests() }
 try runCancellationTests()
 try runScopedScanTests()
 try runExplorerTests()
+try runExplorerBudgetTests()
 try runKeepTests()
 try runDownloadRuleTests()
 try runAppRemovalTests()
@@ -592,4 +627,6 @@ if CommandLine.arguments.contains("--ui") {
     app.run()
 } else {
     try testManager.removeItem(at: nativeTestRoot)
+}
+
 }

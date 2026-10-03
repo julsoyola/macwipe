@@ -1055,12 +1055,40 @@ private struct ExplorerResult: Encodable, Sendable {
     let bytes: UInt64?
     var breadcrumbs: [ExplorerCrumb] = []
     var limited = false
+    var scanLimitReached = false
     var requestID: Int?
 }
 
 private struct ExplorerCrumb: Encodable, Sendable { let id: String; let name: String }
 
 private final class StorageExplorer: @unchecked Sendable {
+    private static let maximumProcessedEntries = 100_000
+    private static let traversalBudgetSeconds: TimeInterval = 10
+    private let maximumEntries: Int
+    private let budgetSeconds: TimeInterval
+    private let monotonicNow: () -> TimeInterval
+    private final class TraversalBudget {
+        let maximumEntries: Int
+        let deadline: TimeInterval
+        let now: () -> TimeInterval
+        var processed = 0
+        var limitReached = false
+        init(maximumEntries: Int, seconds: TimeInterval, now: @escaping () -> TimeInterval) {
+            self.maximumEntries = maximumEntries; self.now = now; deadline = now() + seconds
+        }
+        var exhausted: Bool {
+            if processed >= maximumEntries || now() >= deadline { limitReached = true }
+            return limitReached
+        }
+        func claimEntry() -> Bool {
+            guard !exhausted else { return false }
+            processed += 1
+            return true
+        }
+    }
+    private func traversalBudget() -> TraversalBudget {
+        TraversalBudget(maximumEntries: maximumEntries, seconds: budgetSeconds, now: monotonicNow)
+    }
     private let manager = FileManager.default
     private let home: URL
     private let systemRoot: URL
@@ -1082,6 +1110,9 @@ private final class StorageExplorer: @unchecked Sendable {
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser,
          systemRoot: URL = URL(fileURLWithPath: "/"),
+         maximumEntries: Int = StorageExplorer.maximumProcessedEntries,
+         budgetSeconds: TimeInterval = StorageExplorer.traversalBudgetSeconds,
+         monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          cloudOnly: @escaping (URL) throws -> Bool = { url in
              // Metadata only; never request or read cloud document contents.
              let values = try url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
@@ -1090,6 +1121,7 @@ private final class StorageExplorer: @unchecked Sendable {
         self.home = home.resolvingSymlinksInPath().standardizedFileURL
         self.systemRoot = systemRoot
         self.cloudOnly = cloudOnly
+        self.maximumEntries = maximumEntries; self.budgetSeconds = budgetSeconds; self.monotonicNow = monotonicNow
     }
 
     func scan(control: ScanControl = ScanControl(), progress: (Int) -> Void = { _ in }) -> ExplorerResult {
@@ -1101,13 +1133,18 @@ private final class StorageExplorer: @unchecked Sendable {
         approvedRoots.removeAll()
         breadcrumbs.removeAll()
         var items: [ExplorerItem] = []
-        var processed = 0
+        let budget = traversalBudget()
         var skipped = 0
         let device = try? stamp(home).device
         let candidates = ["Downloads", "Documents", "Desktop", "Movies", "Music", "Pictures", "Applications"]
             .map { home.appendingPathComponent($0) } + [systemRoot.appendingPathComponent("Applications")]
         for source in candidates {
             if control.cancelled { break }
+            if budget.exhausted {
+                items.append(ExplorerItem(id: UUID().uuidString, name: source.lastPathComponent, path: source.path,
+                    bytes: nil, status: "not-scanned", directory: true, package: false))
+                continue
+            }
             let root = source.resolvingSymlinksInPath().standardizedFileURL
             // Redirects may reach another fixed home root or its descendants,
             // never an arbitrary location elsewhere in the home directory.
@@ -1131,7 +1168,7 @@ private final class StorageExplorer: @unchecked Sendable {
             items.removeAll { nested.contains(URL(fileURLWithPath: $0.path)) }
             inventory = inventory.filter { !nested.contains($0.value.0) }
             approvedRoots.append(root)
-            let measurement = measure(root, device: metadata.device, control: control, processed: &processed,
+            let measurement = measure(root, device: metadata.device, control: control, budget: budget,
                                       skipped: &skipped, progress: progress)
             let id = UUID().uuidString
             if measurement.status != "cancelled" { inventory[id] = (root, metadata) }
@@ -1143,7 +1180,7 @@ private final class StorageExplorer: @unchecked Sendable {
         let total = known.reduce(UInt64(0)) { sum, value in sum.addingReportingOverflow(value).overflow ? sum : sum + value }
         rootInventory = inventory
         return ExplorerResult(items: items, status: status, scannedAt: Date().timeIntervalSince1970,
-                              processedCount: processed, skippedCount: skipped, bytes: known.isEmpty ? nil : total)
+                              processedCount: budget.processed, skippedCount: skipped, bytes: known.isEmpty ? nil : total, scanLimitReached: !control.cancelled && budget.limitReached)
     }
 
     func url(id: String) throws -> URL {
@@ -1155,6 +1192,7 @@ private final class StorageExplorer: @unchecked Sendable {
     }
 
     func drill(id: String, control: ScanControl = ScanControl(), progress: (Int) -> Void = { _ in }) throws -> ExplorerResult {
+        let budget = traversalBudget()
         let savedInventory = inventory, savedBreadcrumbs = breadcrumbs
         defer { if control.cancelled { inventory = savedInventory; breadcrumbs = savedBreadcrumbs } }
         let root = try url(id: id)
@@ -1165,19 +1203,20 @@ private final class StorageExplorer: @unchecked Sendable {
             breadcrumbs = Array(breadcrumbs.prefix(index + 1))
         } else { breadcrumbs.append(ExplorerCrumb(id: id, name: root.lastPathComponent)) }
         var top: [(ExplorerItem, EntryStamp)] = []
-        var processed = 0
         var skipped = 0
         var itemCount = 0
         var total: UInt64 = 0
         var hasKnown = false
         guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: nil,
-            options: [.skipsSubdirectoryDescendants], errorHandler: { _, _ in skipped += 1; return !control.cancelled }) else { throw FileSafetyError.unreadable }
-        while let sourceChild = enumerator.nextObject() as? URL {
+            options: [.skipsSubdirectoryDescendants], errorHandler: { _, _ in skipped += 1; return !control.cancelled && !budget.exhausted }) else { throw FileSafetyError.unreadable }
+        // Check before and after filesystem calls; a blocking API can overrun
+        // the budget before returning. This is not a strict wall-clock timeout.
+        while !control.cancelled && !budget.exhausted, let sourceChild = enumerator.nextObject() as? URL {
             let child = sourceChild.standardizedFileURL
-            if control.cancelled { break }
+            if control.cancelled || !budget.claimEntry() { break }
             guard let info = try? stamp(child), info.device == metadata.device, info.kind != S_IFLNK else { skipped += 1; continue }
-            let measurement = measure(child, device: metadata.device, control: control, processed: &processed,
-                                      skipped: &skipped, progress: progress)
+            let measurement = measure(child, device: metadata.device, control: control, budget: budget,
+                                      skipped: &skipped, progress: progress, rootAlreadyCounted: true)
             itemCount += 1
             if let bytes = measurement.bytes {
                 hasKnown = true
@@ -1193,13 +1232,13 @@ private final class StorageExplorer: @unchecked Sendable {
             }
             if top.count > 50 { top.removeLast() }
         }
-        let status = control.cancelled ? "cancelled" : skipped > 0 || top.contains { $0.0.status != "complete" } ? "partial" : "complete"
+        let status = control.cancelled ? "cancelled" : budget.limitReached || skipped > 0 || top.contains { $0.0.status != "complete" } ? "partial" : "complete"
         let retained = inventory.filter { entry in breadcrumbs.contains(where: { $0.id == entry.key }) }
         inventory = rootInventory.merging(retained) { first, _ in first }
         for (item, stamp) in top where item.status != "cancelled" { inventory[item.id] = (URL(fileURLWithPath: item.path), stamp) }
         return ExplorerResult(items: top.map { $0.0 }, status: status, scannedAt: Date().timeIntervalSince1970,
-            processedCount: processed, skippedCount: skipped, bytes: hasKnown ? total : itemCount == 0 && skipped == 0 ? 0 : nil,
-            breadcrumbs: breadcrumbs, limited: itemCount > 50)
+            processedCount: budget.processed, skippedCount: skipped, bytes: hasKnown ? total : itemCount == 0 && skipped == 0 && !budget.limitReached ? 0 : nil,
+            breadcrumbs: breadcrumbs, limited: itemCount > 50, scanLimitReached: !control.cancelled && budget.limitReached)
     }
 
     private func isPackage(_ url: URL) -> Bool {
@@ -1215,29 +1254,31 @@ private final class StorageExplorer: @unchecked Sendable {
             changed: value.st_ctimespec.tv_sec, changedNanos: value.st_ctimespec.tv_nsec)
     }
 
-    private func measure(_ root: URL, device: dev_t, control: ScanControl, processed: inout Int,
-                         skipped: inout Int, progress: (Int) -> Void) -> (bytes: UInt64?, status: String) {
+    private func measure(_ root: URL, device: dev_t, control: ScanControl, budget: TraversalBudget,
+                         skipped: inout Int, progress: (Int) -> Void, rootAlreadyCounted: Bool = false) -> (bytes: UInt64?, status: String) {
+        if control.cancelled { return (nil, "cancelled") }
+        guard rootAlreadyCounted || budget.claimEntry() else { return (nil, "partial") }
+        defer { progress(budget.processed) }
         guard let initial = try? stamp(root) else { skipped += 1; return (nil, "unavailable") }
         if control.cancelled { return (nil, "cancelled") }
         guard manager.isReadableFile(atPath: root.path), (try? cloudOnly(root)) == false else {
             skipped += 1; return (nil, "unavailable")
         }
-        let processedBefore = processed
+        let processedBefore = budget.processed
         if initial.kind == S_IFREG {
-            processed += 1; progress(processed)
             return initial.bytes >= 0 ? (UInt64(initial.bytes), (try? stamp(root)) == initial ? "complete" : "changed") : (nil, "unavailable")
         }
         var localSkipped = 0
         var changed = false
         var bytes: UInt64 = 0
         guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: nil, options: [],
-            errorHandler: { _, _ in localSkipped += 1; return !control.cancelled }) else {
+            errorHandler: { _, _ in localSkipped += 1; return !control.cancelled && !budget.exhausted }) else {
             skipped += 1; return (nil, "unavailable")
         }
-        while let entry = enumerator.nextObject() as? URL {
+        while !control.cancelled && !budget.exhausted, let entry = enumerator.nextObject() as? URL {
             if control.cancelled { skipped += localSkipped; return (bytes, "cancelled") }
-            processed += 1
-            if processed % 100 == 0 { progress(processed) }
+            guard budget.claimEntry() else { break }
+            if budget.processed % 100 == 0 { progress(budget.processed) }
             do {
                 let metadata = try stamp(entry)
                 guard metadata.device == device else {
@@ -1263,8 +1304,9 @@ private final class StorageExplorer: @unchecked Sendable {
         }
         if (try? stamp(root)) != initial { changed = true }
         skipped += localSkipped
-        progress(processed)
-        if processed == processedBefore && localSkipped > 0 { return (nil, "unavailable") }
+        if control.cancelled { return (bytes, "cancelled") }
+        if budget.limitReached { return (bytes, "partial") }
+        if budget.processed == processedBefore && localSkipped > 0 { return (nil, "unavailable") }
         return (bytes, changed ? "changed" : localSkipped > 0 ? "partial" : "complete")
     }
 }

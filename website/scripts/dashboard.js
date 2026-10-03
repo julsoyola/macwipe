@@ -816,17 +816,17 @@
   function renderExplorerStatus() {
     const category = categories.explorer;
     document.querySelector("#explorer-status").textContent = category.scannedAt
-      ? `${isNative ? category.status || "Measured" : "Demo examples · No files read"} · ${new Date(category.scannedAt * 1000).toLocaleString()}${category.limited ? " · Largest 50 items shown" : ""}` : "Not scanned.";
+      ? `${isNative ? category.status || "Measured" : "Demo examples · No files read"} · ${new Date(category.scannedAt * 1000).toLocaleString()}${category.limited ? " · Largest 50 items shown" : ""}${category.scanLimitReached ? " · Scan limit reached. Explore a smaller folder." : ""}` : "Not scanned.";
   }
   function receiveExplorer(payload) {
     const category = categories.explorer;
     Object.assign(category, { available: true, bytes: payload.bytes, measurementAvailable: Number.isFinite(payload.bytes),
       eligibleBytes: 0, scannedAt: payload.scannedAt, skippedPaths: payload.skippedCount || 0,
-      status: payload.status, limited: payload.limited, items: payload.items.slice(0, 50).map((file, originalScanIndex) => ({
+      status: payload.status, limited: payload.limited, scanLimitReached: payload.scanLimitReached, items: payload.items.slice(0, 50).map((file, originalScanIndex) => ({
         ...file, id: file.id, category: "explorer", kind: "storage-inventory", reviewClassification: "review-carefully",
         canClean: false, bulkSelectionEligible: false, homeRecommendationEligible: false,
         bytes: Number.isFinite(file.bytes) ? file.bytes : null, mb: Number.isFinite(file.bytes) ? file.bytes / 1_000_000 : null,
-        info: Number.isFinite(file.bytes) ? `${formatLogical(file.bytes)} · ${file.status || "Example"}` : "Size unavailable",
+        info: Number.isFinite(file.bytes) ? `${formatLogical(file.bytes)} · ${file.status || "Example"}` : file.status === "not-scanned" ? "Not scanned" : "Size unavailable",
         originalScanIndex,
       })) });
     cachedRows.delete("explorer");
