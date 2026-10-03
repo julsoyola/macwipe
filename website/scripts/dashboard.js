@@ -135,35 +135,45 @@
     document.querySelector("#home-measurement-details").textContent = ["downloads", "caches"]
       .map((key) => `${key === "downloads" ? "Downloads" : "Caches"}: ${inventorySummary(categories[key])}${Number.isFinite(categories[key]?.bytes) ? ` (${categories[key].bytes.toLocaleString("en-US")} bytes)` : ""}`)
       .join(". ") + ". Measured files use logical sizes, not guaranteed space freed. Files moved to Trash still occupy space.";
+    let hasRecommendations = false;
+    const loading = state === "loading";
     document.querySelectorAll("[data-recommendation]").forEach((card) => {
       const key = card.dataset.recommendation;
+      const category = categories[key];
+      const title = card.querySelector("[data-recommendation-title]");
+      const explanation = card.querySelector("[data-recommendation-explanation]");
       const count = card.querySelector("[data-recommendation-count]");
       const size = card.querySelector("[data-recommendation-size]");
       const button = card.querySelector("button");
       card.hidden = false;
-      if (state !== "ready" && state !== "partial") {
-        if (state === "loading") {
-          count.textContent = isNative
-            ? "Waiting for scan results."
-            : "Refreshing example items…";
-        } else {
-          count.textContent = state === "error"
-            ? "Recommendations are unavailable. Try Rescan."
-            : "Recommendations are not available yet.";
-        }
-        size.textContent = "";
-        button.disabled = true;
+      title.textContent = key === "downloads" ? "Review Downloads" : "Review caches";
+      explanation.textContent = key === "downloads"
+        ? "Browse scanned files before choosing." : "Check app cache files individually.";
+      count.textContent = "";
+      count.hidden = true;
+      size.textContent = "";
+      size.hidden = true;
+      button.textContent = "Review files";
+      button.dataset.category = key;
+      delete button.dataset.action;
+      button.disabled = loading;
+      if (loading) return;
+
+      const unavailable = state === "error" || category.measurementAvailable === false;
+      const unscanned = isNative && !category.available;
+      const partial = category.error || category.skippedPaths > 0;
+      if (unavailable || category.cancelled) {
+        count.textContent = category.cancelled ? "Scan cancelled" : "Unavailable";
+        if (partial) count.textContent += " · Partial";
+        count.hidden = false;
+        button.textContent = "Rescan";
+        button.dataset.action = "preview";
+        delete button.dataset.category;
         return;
       }
-      const category = categories[key];
-      if (category.cancelled) {
-        count.textContent = "Scan cancelled. Rescan before cleanup."; size.textContent = ""; button.disabled = true; return;
-      }
-      if (isNative && !category.available) {
-        card.hidden = true;
-        count.textContent = "Not scanned.";
-        size.textContent = "";
-        button.disabled = true;
+      if (unscanned || state === "waiting") {
+        count.textContent = "Not scanned";
+        count.hidden = false;
         return;
       }
       let items = category.items.filter(
@@ -180,28 +190,25 @@
       if (isNative) {
         items = [...new Map(items.map((item) => [item.path, item])).values()];
       }
-      const partial = isNative && (category.error || category.skippedPaths > 0);
-      count.textContent = items.length
-        ? `${items.length} eligible ${isNative ? "" : "example "}${items.length === 1 ? "item" : "items"}`
-        : isNative ? "No eligible items found in accessible results."
-          : "No eligible example items.";
-      if (partial) {
-        if (!items.length) count.textContent = "No eligible items returned in partial results.";
-        count.textContent += " · Partial scan";
+      if (!items.length) {
+        if (partial) { count.textContent = "Partial scan"; count.hidden = false; }
+        return;
       }
-      const known = items.filter((item) => Number.isFinite(item.bytes));
-      const amount = known.reduce(
-        (sum, item) => sum + item.bytes, 0,
-      );
-      const formatted = formatLogical(amount);
-      size.textContent = items.length && !known.length
-        ? "Size unavailable"
-        : !items.length && partial ? "Size unavailable"
-          : `${formatted} available for review${known.length < items.length ? " · Some sizes unavailable" : ""}`;
-      button.disabled = items.length === 0;
-      card.hidden = items.length === 0;
+      hasRecommendations = true;
+      title.textContent = key === "downloads" ? "Downloads" : "App caches";
+      explanation.textContent = key === "downloads"
+        ? "Not modified in over 30 days. Keep anything you still need."
+        : "Temporary app files; apps may recreate them.";
+      count.hidden = false;
+      count.textContent = `${items.length} eligible ${isNative ? "" : "example "}${items.length === 1 ? "item" : "items"}${partial ? " · Partial scan" : ""}`;
+      size.hidden = false;
+      size.textContent = `${formatLogical(items.reduce((sum, item) => sum + item.bytes, 0))} available for review`;
     });
-    document.querySelector("#recommendations-heading").hidden = ![...document.querySelectorAll("[data-recommendation]")].some((card) => !card.hidden);
+    const recommendationsHeading = document.querySelector("#recommendations-heading");
+    recommendationsHeading.hidden = false;
+    recommendationsHeading.textContent = loading
+      ? isNative ? "Scanning…" : "Refreshing example data…"
+      : hasRecommendations ? "A few things worth reviewing" : "Browse your scanned files";
   }
 
   function setScanState(state, message) {
