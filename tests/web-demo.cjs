@@ -79,7 +79,7 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
     await page
       .locator(".demo-link")
       .evaluate((el) => getComputedStyle(el).color),
-    "rgb(255, 255, 255)",
+    "rgb(84, 43, 69)",
   );
   const button = page.locator('[data-question="data"]');
   await button.hover();
@@ -260,8 +260,14 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
   });
   await page.keyboard.press("Escape");
   await page.locator(".demo-link").click();
+  assert.equal(await page.locator('nav [aria-current="page"]').getAttribute("data-view"), "home");
+  assert.equal(await page.locator("#home-view").isVisible(), true);
+  assert.equal(await page.locator("#file-list").isVisible(), false);
+  assert.match(await page.locator(".demo-tag").textContent(), /Example data/);
+  await page.locator(".system-details").click();
+  assert.equal(await page.locator("#metric-example-label").isVisible(), true);
+  await page.keyboard.press("Escape");
   for (const key of [
-    "storage",
     "caches",
     "downloads",
     "applications",
@@ -269,8 +275,8 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
     "performance",
     "privacy",
   ]) {
-    await page.locator(`[data-category="${key}"]`).click();
-    assert.equal(await page.locator("#item-table-body tr").count(), 3);
+    await page.locator(`nav [data-category="${key}"]`).click();
+    assert.equal(await page.locator("#item-table-body input").count(), key === "applications" ? 4 : 3);
     assert.equal(await page.locator('[aria-current="page"]').count(), 1);
     assert.equal(
       await page
@@ -284,7 +290,13 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
       await page.locator("#content-pane").textContent(),
       /examples loaded|Preview complete|Simulation complete/,
     );
-    await page.locator("#item-table-body input").first().check();
+    const readOnly = ["startup", "performance"].includes(key);
+    assert.equal(await page.locator("#home-view").isVisible(), false);
+    assert.equal(await page.locator("#item-table-body input").first().isDisabled(), readOnly);
+    if (readOnly) {
+      assert.equal(await page.locator("#item-table-body input:enabled").count(), 0);
+      assert.equal(await page.locator("#btn-select-all").isVisible(), false);
+    } else await page.locator("#item-table-body input").first().check();
     const selection = await page.locator("#selection-status").textContent();
     await page.locator("#btn-preview-scan").click();
     assert.equal(
@@ -293,7 +305,7 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
     );
     assert.equal(
       await page.locator("#item-table-body input").first().isChecked(),
-      true,
+      !readOnly,
     );
     await page.locator("#item-table-body button").first().click();
     assert.equal(
@@ -309,42 +321,44 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
       await page.locator("#details-dialog").evaluate((el) => el.open),
       false,
     );
-    await page.locator("#item-table-body input").first().uncheck();
+    if (!readOnly) await page.locator("#item-table-body input").first().uncheck();
   }
-  await page.locator('[data-category="storage"]').click();
+  await page.locator('nav [data-category="caches"]').click();
   await page.locator("#btn-select-all").click();
   assert.equal(
     await page.locator("#selection-status").textContent(),
-    "Selected: 3 items · 2,240 MB",
+    "Selected: 3 items · 445 MB",
   );
   await page.locator("#btn-select-all").click();
   assert.equal(
     await page.locator("#selection-status").textContent(),
-    "Selected: 0 items · 0 MB",
+    "Selected: 0 items · 0 bytes",
   );
+  await page.locator('nav [data-category="downloads"]').click();
+  assert.equal(await page.locator("#btn-select-all").isVisible(), false);
   await page.locator("#item-table-body input").first().check();
-  await page.locator('[data-category="caches"]').click();
+  await page.locator('nav [data-category="caches"]').click();
   await page.locator("#btn-select-all").click();
   assert.equal(
     await page.locator("#selection-status").textContent(),
-    "Selected: 4 items · 1,685 MB",
+    "Selected: 4 items · 865 MB",
   );
   await page.locator("#btn-review-selected").click();
   assert.equal(await page.locator("#review-items-list li").count(), 4);
   assert.equal(
     await page.locator("#review-total-size").textContent(),
-    "1,685 MB",
+    "865 MB",
   );
   await page.keyboard.press("Escape");
   assert.equal(
     await page.locator("#selection-status").textContent(),
-    "Selected: 4 items · 1,685 MB",
+    "Selected: 4 items · 865 MB",
   );
   await page.locator("#btn-review-selected").click();
   await page.locator("#review-simulate-btn").click();
   assert.equal(
     await page.locator("#selection-status").textContent(),
-    "Selected: 0 items · 0 MB",
+    "Selected: 0 items · 0 bytes",
   );
   assert.equal(await page.locator("#btn-review-selected").isDisabled(), true);
   assert.equal(
@@ -357,12 +371,12 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
     path: path.join(artifacts, "dashboard-desktop.png"),
     fullPage: true,
   });
-  await page.locator('[data-category="storage"]').click();
+  await page.locator('nav [data-category="caches"]').click();
   const listenersBefore = await page.evaluate(
     () => window.__appActivity.listeners,
   );
   await page.evaluate(() => {
-    const rows = [...document.querySelectorAll("#item-table-body tr")];
+    const rows = [...document.querySelectorAll("#item-table-body tr:has(input[data-item])")];
     const body = document.querySelector("#item-table-body");
     let replacements = 0;
     const observer = new MutationObserver((records) => {
@@ -383,16 +397,16 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
   assert.equal(await page.evaluate(() => window.__rowCheck.replacements), 0);
   await page.evaluate(() => {
     window.__rowCheck.observer.disconnect();
-    const buttons = [...document.querySelectorAll("[data-category]")];
+    const buttons = [...document.querySelectorAll("nav [data-category], nav [data-view=home]")];
     for (let index = 0; index < 100; index += 1)
       buttons[index % buttons.length].click();
-    buttons[0].click();
+    document.querySelector("nav [data-category=caches]").click();
   });
   assert.equal(
     await page.evaluate(() =>
       window.__rowCheck.rows.every(
         (row, index) =>
-          row === document.querySelector("#item-table-body").children[index],
+          row === document.querySelectorAll("#item-table-body tr:has(input[data-item])")[index],
       ),
     ),
     true,
@@ -430,7 +444,10 @@ const stamp = /^\[\d{1,2}:\d{2} (AM|PM)\]$/;
       );
       if (file === "index.html")
         await page.locator('[data-question="safe"]').click();
-      else await page.locator("#item-table-body button").first().click();
+      else {
+        await page.locator('nav [data-category="caches"]').click();
+        await page.locator("#item-table-body button").first().click();
+      }
       const dialog = page.locator("dialog[open]");
       const box = await dialog.boundingBox();
       assert.ok(

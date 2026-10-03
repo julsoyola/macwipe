@@ -208,7 +208,7 @@ private final class NativeTestDelegate: NSObject, NSApplicationDelegate {
     @MainActor func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = ViewController()
         self.controller = controller
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.contentViewController = controller
         self.window = window
@@ -243,24 +243,36 @@ extension ViewController {
     fileprivate func verifyNativeTest(cleaning: Bool, completion: @escaping @MainActor @Sendable (Any?, Error?) -> Void) {
         let script = cleaning ? """
             (() => {
-              if (document.querySelector('.dialog-body > p').textContent !== 'Cleanup complete.') return 'waiting';
-              if (!document.querySelector('.preview-note')?.textContent.includes('Scan complete')) return 'waiting';
-              if (document.querySelector('#selection-status').textContent !== 'Selected: 0 items · 0 MB') return 'waiting';
+              if (window.macwipeUI?.isBusy) return 'waiting';
+              if (!document.querySelector('#review-dialog .dialog-body > p')?.textContent.startsWith('Cleanup finished.')) return 'waiting';
+              if (document.querySelector('#selection-status').textContent !== 'Selected: 0 items · 0 bytes') return 'waiting';
               return 'ready';
             })()
             """ : """
             (() => {
-              if (!document.querySelector('.preview-note')?.textContent.includes('Scan complete')) return 'waiting';
-              for (const key of ['storage','caches','downloads','applications','startup','performance','privacy']) {
-                const button = document.querySelector('button[data-category="' + key + '"]');
+              if (!window.macwipeUI || window.macwipeUI.isBusy || !document.querySelector('#btn-scan-details') || document.querySelector('#btn-scan-details').hidden) return 'waiting';
+              const checked = window.__nativeTestChecked ||= new Set();
+              for (const key of ['caches','downloads','applications','startup','performance','privacy']) {
+                if (checked.has(key)) continue;
+                const button = document.querySelector('nav button[data-category="' + key + '"]');
                 if (!button || button.disabled) return 'FAIL: disabled tab ' + key;
                 button.click();
                 const boxes = [...document.querySelectorAll('#item-table-body input')];
-                if (!boxes.length || boxes.some(box => box.disabled || !box.dataset.path)) return 'FAIL: missing interactive files ' + key;
+                if (!boxes.length && document.querySelector('#item-table-body').textContent.includes('Not scanned')) return 'waiting';
+                const readOnly = ['startup','performance'].includes(key);
+                if (!boxes.length || boxes.some(box => box.disabled !== readOnly || !box.dataset.path)) return 'FAIL: incorrect file controls ' + key;
+                if (document.querySelectorAll('nav [aria-current="page"]').length !== 1 || !document.querySelector('#home-view').hidden) return 'FAIL: mixed navigation state';
+                checked.add(key);
               }
-              document.querySelector('#item-table-body input').click();
+              document.querySelector('nav [data-view="home"]').click();
+              if (document.querySelector('#home-view').hidden || !document.querySelector('#file-list').hidden) return 'FAIL: Home content';
+              document.querySelector('nav [data-category="caches"]').click();
+              document.querySelector('#item-table-body input:enabled').click();
               document.querySelector('#btn-review-selected').click();
               if (!document.querySelector('#review-dialog').open) return 'FAIL: review did not open';
+              document.querySelector('#review-dialog').close();
+              if (!document.querySelector('#item-table-body input:checked')) return 'FAIL: cancel lost selection';
+              document.querySelector('#btn-review-selected').click();
               document.querySelector('#review-simulate-btn').click();
               return 'ready';
             })()
@@ -448,7 +460,10 @@ private func runExplorerTests() throws {
     try testManager.createSymbolicLink(at: redirectedHome.appendingPathComponent("Downloads"),
         withDestinationURL: redirectedHome.appendingPathComponent("Library/Secret"))
     let redirected = StorageExplorer(home: redirectedHome, systemRoot: system, cloudOnly: { _ in false }).scan()
-    precondition(redirected.items.first { $0.name == "Downloads" }!.bytes == nil && redirected.processedCount == 0)
+    let rejectedRedirect = redirected.items.first { $0.name == "Downloads" }!
+    precondition(rejectedRedirect.bytes == nil && rejectedRedirect.status == "unavailable")
+    // The valid, empty system Applications root now counts as one entry.
+    precondition(redirected.processedCount == 1 && redirected.bytes == 0)
     print("PASS: explorer fixed roots, redirected/nested deduplication, outside symlink and cloud skipping, package logical size, unreadable versus zero, cancellation, and no cleanup registration.")
 }
 
