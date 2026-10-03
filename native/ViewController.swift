@@ -463,6 +463,44 @@ private enum AppRemoval {
     }
 }
 
+// Logical totals count a regular file once by device/inode. APFS clones
+// have distinct identities; this does not estimate allocated/reclaimable bytes.
+private struct SharedLogicalFile: Encodable, Sendable {
+    let key: String
+    let bytes: UInt64
+}
+
+private struct LogicalSizeTotal {
+    private(set) var files: [String: UInt64] = [:]
+    private(set) var bytes: UInt64 = 0
+    static func key(device: dev_t, inode: ino_t) -> String { "file:\(device):\(inode)" }
+    mutating func include(path: String, device: dev_t, inode: ino_t, kind: mode_t, size: Int64) throws {
+        guard kind == S_IFREG || kind == S_IFLNK else { return }
+        guard size >= 0 else { throw FileSafetyError.unreadable }
+        try include(key: kind == S_IFREG ? Self.key(device: device, inode: inode) : "link:\(path)", bytes: UInt64(size))
+    }
+    private mutating func include(key: String, bytes value: UInt64) throws {
+        guard files[key] == nil else { return }
+        let sum = bytes.addingReportingOverflow(value)
+        guard !sum.overflow else { throw FileSafetyError.unreadable }
+        files[key] = value; bytes = sum.partialValue
+    }
+    func mergedBytes(_ other: LogicalSizeTotal) throws -> UInt64 {
+        var sum = bytes
+        for (key, value) in other.files where files[key] == nil {
+            let next = sum.addingReportingOverflow(value)
+            guard !next.overflow else { throw FileSafetyError.unreadable }
+            sum = next.partialValue
+        }
+        return sum
+    }
+    mutating func merge(_ other: LogicalSizeTotal) throws {
+        let sum = try mergedBytes(other)
+        for (key, value) in other.files where files[key] == nil { files[key] = value }
+        bytes = sum
+    }
+}
+
 private struct ScanItem: Encodable, Sendable {
     let id: String
     let category: String
@@ -479,6 +517,7 @@ private struct ScanItem: Encodable, Sendable {
     let explanation: String
     let ownerName: String?
     let kept: Bool
+    let sharedFiles: [SharedLogicalFile]
 }
 
 private struct CategoryScan: Encodable, Sendable {
@@ -538,6 +577,8 @@ private final class FileWorker: @unchecked Sendable {
     private var approved: [Category: [String: ApprovedItem]] = [:]
     private var inventory: [String: ApprovedItem] = [:]
     private var completed: [String: CategoryScan] = [:]
+    private struct CategoryTotals { var inventory = LogicalSizeTotal(); var eligible = LogicalSizeTotal() }
+    private var completedTotals: [Category: CategoryTotals] = [:]
     private var scanControl: ScanControl?
     private var scanProgress: ((Category, Int) -> Void)?
     private var scanCategory: Category = .caches
@@ -577,6 +618,7 @@ private final class FileWorker: @unchecked Sendable {
         for category in scope { approved.removeValue(forKey: category) }
         inventory = inventory.filter { !scope.contains($0.value.category) }
         var results = completed
+        var totals = completedTotals
         var applicationSkipped: [String] = []
         let applications = scope.contains(.applications) ? roots(for: .applications).prefix(2).flatMap {
             applicationURLs(in: $0, onError: { applicationSkipped.append($0.path) })
@@ -602,6 +644,7 @@ private final class FileWorker: @unchecked Sendable {
             scanCategory = category
             progress(category, processedCount)
             var result = CategoryScan()
+            var categoryTotals = CategoryTotals()
             if category == .applications { result.skippedLocations = applicationSkipped; result.skippedPaths = applicationSkipped.count }
             for root in roots(for: category) {
                 // Invalid or inaccessible roots never disable other roots/items.
@@ -633,9 +676,12 @@ private final class FileWorker: @unchecked Sendable {
                     }
                     if category == .startup && child.pathExtension.lowercased() != "plist" { continue }
                     if category == .privacy && !isBrowsingTrace(child, root: root) { continue }
-                    scanEntry(child, root: root, category: category, now: now, result: &result)
+                    scanEntry(child, root: root, category: category, now: now, result: &result, totals: &categoryTotals)
                 }
             }
+            result.bytes = categoryTotals.inventory.bytes
+            result.eligibleBytes = categoryTotals.eligible.bytes
+            totals[category] = categoryTotals
             result.formatted = format(result.bytes)
             result.eligibleFormatted = format(result.eligibleBytes)
             result.canClean = result.items.contains { $0.canClean }
@@ -647,13 +693,20 @@ private final class FileWorker: @unchecked Sendable {
         }
         // Storage is an overview; items retain their original cleanup category.
         var storage = CategoryScan()
+        var storageTotals = CategoryTotals()
         for category in [Category.caches, .logs, .trash, .downloads] {
             if let scan = results[category.rawValue] {
-                storage.bytes += scan.bytes
-                storage.eligibleBytes += scan.eligibleBytes
+                do {
+                    if let total = totals[category] {
+                        try storageTotals.inventory.merge(total.inventory)
+                        try storageTotals.eligible.merge(total.eligible)
+                    }
+                } catch { storage.error = "Logical size exceeds the supported total." }
                 storage.items.append(contentsOf: scan.items)
             }
         }
+        storage.bytes = storageTotals.inventory.bytes
+        storage.eligibleBytes = storageTotals.eligible.bytes
         storage.formatted = format(storage.bytes)
         storage.eligibleFormatted = format(storage.eligibleBytes)
         storage.canClean = storage.items.contains { $0.canClean }
@@ -664,6 +717,7 @@ private final class FileWorker: @unchecked Sendable {
             return ScanData(categories: completed, storage: volumeStorage(), refreshed: scope.map(\.rawValue), cancelled: true)
         }
         completed = results
+        completedTotals = totals
         return ScanData(categories: results, storage: volumeStorage(), refreshed: scope.map(\.rawValue) + ["storage"])
     }
 
@@ -756,12 +810,12 @@ private final class FileWorker: @unchecked Sendable {
     }
 
     private func scanEntry(_ url: URL, root: URL, category: Category,
-                           now: Date, result: inout CategoryScan) {
+                           now: Date, result: inout CategoryScan, totals: inout CategoryTotals) {
         guard !containsRunningApplication(url) else { return }
         do {
             let measured = try measure(url)
             guard let metadata = measured.entries[url.path] else { return }
-            let nextBytes = try adding(result.bytes, measured.bytes)
+            _ = try totals.inventory.mergedBytes(measured.total)
             let eligible = category != .trash && metadata.kind != S_IFLNK
                 && (category != .downloads || eligibleDownload(metadata, url: url, root: root, now: now))
             if eligible {
@@ -770,7 +824,7 @@ private final class FileWorker: @unchecked Sendable {
                 let kept = isKept(url)
                 let canClean = category != .startup && category != .performance && !kept
                 if canClean {
-                    result.eligibleBytes = try adding(result.eligibleBytes, measured.bytes)
+                    try totals.eligible.merge(measured.total)
                     approved[category, default: [:]][url.path] = ApprovedItem(root: root, category: category, measured: measured)
                 }
                 let unmatched = category == .applications && root.lastPathComponent == "Application Support"
@@ -797,9 +851,9 @@ private final class FileWorker: @unchecked Sendable {
                     modifiedAt: Double(metadata.modifiedSeconds) + Double(metadata.modifiedNanoseconds) / 1_000_000_000,
                     explanation: cacheRule?.explanation ?? (category == .caches
                         ? "Unrecognized cache candidate. Review individually; its contents and removal consequences are not established. Folder modification time is not the age of every child."
-                        : ""), ownerName: cacheRule?.owner, kept: kept))
+                        : ""), ownerName: cacheRule?.owner, kept: kept, sharedFiles: measured.sharedFiles))
             }
-            result.bytes = nextBytes
+            try totals.inventory.merge(measured.total)
         } catch {
             if scanControl?.cancelled == true { return }
             // A restricted descendant must not hide accessible siblings. Never
@@ -808,7 +862,7 @@ private final class FileWorker: @unchecked Sendable {
             result.skippedLocations.append(url.path)
             guard category != .downloads, url.pathExtension.lowercased() != "app" else { return }
             for child in children(of: url) {
-                scanEntry(child, root: root, category: category, now: now, result: &result)
+                scanEntry(child, root: root, category: category, now: now, result: &result, totals: &totals)
             }
         }
     }
@@ -871,6 +925,7 @@ private final class FileWorker: @unchecked Sendable {
                 candidate.measured.url.path.hasPrefix(other.measured.url.path + "/")
             }
         }
+        var movedTotal = LogicalSizeTotal()
         for target in topLevelTargets.sorted(by: { $0.measured.url.path < $1.measured.url.path }) {
             do {
                 let root = target.root
@@ -888,10 +943,11 @@ private final class FileWorker: @unchecked Sendable {
                     guard let metadata = current.entries[item.url.path],
                           eligibleDownload(metadata, url: item.url, root: root, now: now) else { throw FileSafetyError.changed }
                 }
-                let nextBytes = try adding(result.movedBytes, current.bytes)
+                _ = try movedTotal.mergedBytes(current.total)
                 // The sole mutation API. No permanent deletion or fallback.
                 try trashItem(item.url)
-                result.movedBytes = nextBytes
+                try movedTotal.merge(current.total)
+                result.movedBytes = movedTotal.bytes
                 result.movedCount += 1
                 result.movedPaths.append(item.url.path)
             } catch {
@@ -930,6 +986,7 @@ private final class FileWorker: @unchecked Sendable {
         let inode: ino_t
         let kind: mode_t
         let size: Int64
+        let linkCount: nlink_t
         let modifiedSeconds: Int
         let modifiedNanoseconds: Int
         let changedSeconds: Int
@@ -940,6 +997,14 @@ private final class FileWorker: @unchecked Sendable {
         let url: URL
         let bytes: UInt64
         let entries: [String: FileStamp]
+        let total: LogicalSizeTotal
+        var sharedFiles: [SharedLogicalFile] {
+            var shared: [String: UInt64] = [:]
+            for metadata in entries.values where metadata.kind == S_IFREG && metadata.linkCount > 1 {
+                shared[LogicalSizeTotal.key(device: metadata.device, inode: metadata.inode)] = UInt64(metadata.size)
+            }
+            return shared.keys.sorted().map { SharedLogicalFile(key: $0, bytes: shared[$0]!) }
+        }
     }
 
     private struct ApprovedItem {
@@ -977,13 +1042,13 @@ private final class FileWorker: @unchecked Sendable {
         }
         guard status == 0 else { throw FileSafetyError.unreadable }
         return FileStamp(device: info.st_dev, inode: info.st_ino, kind: info.st_mode & S_IFMT,
-            size: info.st_size, modifiedSeconds: info.st_mtimespec.tv_sec,
+            size: info.st_size, linkCount: info.st_nlink, modifiedSeconds: info.st_mtimespec.tv_sec,
             modifiedNanoseconds: info.st_mtimespec.tv_nsec, changedSeconds: info.st_ctimespec.tv_sec,
             changedNanoseconds: info.st_ctimespec.tv_nsec)
     }
 
     private func measure(_ url: URL) throws -> MeasuredItem {
-        var bytes: UInt64 = 0
+        var total = LogicalSizeTotal()
         var entries: [String: FileStamp] = [:]
         var pending = [url]
         while let entry = pending.popLast() {
@@ -1007,18 +1072,12 @@ private final class FileWorker: @unchecked Sendable {
             case S_IFREG, S_IFLNK:
                 // Count a link's own bytes without following it. Include hidden files.
                 guard metadata.size >= 0 else { throw FileSafetyError.unreadable }
-                bytes = try adding(bytes, UInt64(metadata.size))
+                try total.include(path: entry.path, device: metadata.device, inode: metadata.inode, kind: metadata.kind, size: metadata.size)
             default:
                 throw FileSafetyError.unreadable
             }
         }
-        return MeasuredItem(url: url, bytes: bytes, entries: entries)
-    }
-
-    private func adding(_ lhs: UInt64, _ rhs: UInt64) throws -> UInt64 {
-        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
-        guard !overflow else { throw FileSafetyError.unreadable }
-        return sum
+        return MeasuredItem(url: url, bytes: total.bytes, entries: entries, total: total)
     }
 
     private func format(_ bytes: UInt64) -> String {
@@ -1133,6 +1192,7 @@ private final class StorageExplorer: @unchecked Sendable {
         approvedRoots.removeAll()
         breadcrumbs.removeAll()
         var items: [ExplorerItem] = []
+        var rootTotals: [String: LogicalSizeTotal] = [:]
         let budget = traversalBudget()
         var skipped = 0
         let device = try? stamp(home).device
@@ -1166,21 +1226,26 @@ private final class StorageExplorer: @unchecked Sendable {
             let nested = approvedRoots.filter { $0.path.hasPrefix(root.path + "/") }
             approvedRoots.removeAll { nested.contains($0) }
             items.removeAll { nested.contains(URL(fileURLWithPath: $0.path)) }
+            for root in nested { rootTotals.removeValue(forKey: root.path) }
             inventory = inventory.filter { !nested.contains($0.value.0) }
             approvedRoots.append(root)
             let measurement = measure(root, device: metadata.device, control: control, budget: budget,
                                       skipped: &skipped, progress: progress)
+            rootTotals[root.path] = measurement.total
             let id = UUID().uuidString
             if measurement.status != "cancelled" { inventory[id] = (root, metadata) }
             items.append(ExplorerItem(id: id, name: source.lastPathComponent, path: root.path,
                 bytes: measurement.bytes, status: measurement.status, directory: true, package: false))
         }
-        let status = control.cancelled ? "cancelled" : skipped > 0 || items.contains { $0.status != "complete" } ? "partial" : "complete"
         let known = items.compactMap(\.bytes)
-        let total = known.reduce(UInt64(0)) { sum, value in sum.addingReportingOverflow(value).overflow ? sum : sum + value }
+        var total = LogicalSizeTotal()
+        for measured in rootTotals.values {
+            do { try total.merge(measured) } catch { skipped += 1 }
+        }
+        let status = control.cancelled ? "cancelled" : skipped > 0 || items.contains { $0.status != "complete" } ? "partial" : "complete"
         rootInventory = inventory
         return ExplorerResult(items: items, status: status, scannedAt: Date().timeIntervalSince1970,
-                              processedCount: budget.processed, skippedCount: skipped, bytes: known.isEmpty ? nil : total, scanLimitReached: !control.cancelled && budget.limitReached)
+                              processedCount: budget.processed, skippedCount: skipped, bytes: known.isEmpty ? nil : total.bytes, scanLimitReached: !control.cancelled && budget.limitReached)
     }
 
     func url(id: String) throws -> URL {
@@ -1205,7 +1270,7 @@ private final class StorageExplorer: @unchecked Sendable {
         var top: [(ExplorerItem, EntryStamp)] = []
         var skipped = 0
         var itemCount = 0
-        var total: UInt64 = 0
+        var total = LogicalSizeTotal()
         var hasKnown = false
         guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: nil,
             options: [.skipsSubdirectoryDescendants], errorHandler: { _, _ in skipped += 1; return !control.cancelled && !budget.exhausted }) else { throw FileSafetyError.unreadable }
@@ -1218,10 +1283,9 @@ private final class StorageExplorer: @unchecked Sendable {
             let measurement = measure(child, device: metadata.device, control: control, budget: budget,
                                       skipped: &skipped, progress: progress, rootAlreadyCounted: true)
             itemCount += 1
-            if let bytes = measurement.bytes {
+            if measurement.bytes != nil {
                 hasKnown = true
-                let sum = total.addingReportingOverflow(bytes)
-                if sum.overflow { skipped += 1 } else { total = sum.partialValue }
+                do { try total.merge(measurement.total) } catch { skipped += 1 }
             }
             let item = ExplorerItem(id: UUID().uuidString, name: child.lastPathComponent, path: child.path,
                 bytes: measurement.bytes, status: measurement.status, directory: info.kind == S_IFDIR, package: isPackage(child))
@@ -1237,7 +1301,7 @@ private final class StorageExplorer: @unchecked Sendable {
         inventory = rootInventory.merging(retained) { first, _ in first }
         for (item, stamp) in top where item.status != "cancelled" { inventory[item.id] = (URL(fileURLWithPath: item.path), stamp) }
         return ExplorerResult(items: top.map { $0.0 }, status: status, scannedAt: Date().timeIntervalSince1970,
-            processedCount: budget.processed, skippedCount: skipped, bytes: hasKnown ? total : itemCount == 0 && skipped == 0 && !budget.limitReached ? 0 : nil,
+            processedCount: budget.processed, skippedCount: skipped, bytes: hasKnown ? total.bytes : itemCount == 0 && skipped == 0 && !budget.limitReached ? 0 : nil,
             breadcrumbs: breadcrumbs, limited: itemCount > 50, scanLimitReached: !control.cancelled && budget.limitReached)
     }
 
@@ -1255,28 +1319,32 @@ private final class StorageExplorer: @unchecked Sendable {
     }
 
     private func measure(_ root: URL, device: dev_t, control: ScanControl, budget: TraversalBudget,
-                         skipped: inout Int, progress: (Int) -> Void, rootAlreadyCounted: Bool = false) -> (bytes: UInt64?, status: String) {
-        if control.cancelled { return (nil, "cancelled") }
-        guard rootAlreadyCounted || budget.claimEntry() else { return (nil, "partial") }
+                         skipped: inout Int, progress: (Int) -> Void, rootAlreadyCounted: Bool = false) -> (bytes: UInt64?, status: String, total: LogicalSizeTotal) {
+        var total = LogicalSizeTotal()
+        func result(_ bytes: UInt64?, _ status: String) -> (bytes: UInt64?, status: String, total: LogicalSizeTotal) { (bytes, status, total) }
+        if control.cancelled { return result(nil, "cancelled") }
+        guard rootAlreadyCounted || budget.claimEntry() else { return result(nil, "partial") }
         defer { progress(budget.processed) }
-        guard let initial = try? stamp(root) else { skipped += 1; return (nil, "unavailable") }
-        if control.cancelled { return (nil, "cancelled") }
+        guard let initial = try? stamp(root) else { skipped += 1; return result(nil, "unavailable") }
+        if control.cancelled { return result(nil, "cancelled") }
         guard manager.isReadableFile(atPath: root.path), (try? cloudOnly(root)) == false else {
-            skipped += 1; return (nil, "unavailable")
+            skipped += 1; return result(nil, "unavailable")
         }
         let processedBefore = budget.processed
         if initial.kind == S_IFREG {
-            return initial.bytes >= 0 ? (UInt64(initial.bytes), (try? stamp(root)) == initial ? "complete" : "changed") : (nil, "unavailable")
+            do {
+                try total.include(path: root.path, device: initial.device, inode: initial.inode, kind: initial.kind, size: initial.bytes)
+                return result(total.bytes, (try? stamp(root)) == initial ? "complete" : "changed")
+            } catch { return result(nil, "unavailable") }
         }
         var localSkipped = 0
         var changed = false
-        var bytes: UInt64 = 0
         guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: nil, options: [],
             errorHandler: { _, _ in localSkipped += 1; return !control.cancelled && !budget.exhausted }) else {
-            skipped += 1; return (nil, "unavailable")
+            skipped += 1; return result(nil, "unavailable")
         }
         while !control.cancelled && !budget.exhausted, let entry = enumerator.nextObject() as? URL {
-            if control.cancelled { skipped += localSkipped; return (bytes, "cancelled") }
+            if control.cancelled { skipped += localSkipped; return result(total.bytes, "cancelled") }
             guard budget.claimEntry() else { break }
             if budget.processed % 100 == 0 { progress(budget.processed) }
             do {
@@ -1292,9 +1360,7 @@ private final class StorageExplorer: @unchecked Sendable {
                 }
                 if metadata.kind == S_IFREG {
                     guard metadata.bytes >= 0 else { throw FileSafetyError.unreadable }
-                    let next = bytes.addingReportingOverflow(UInt64(metadata.bytes))
-                    guard !next.overflow else { throw FileSafetyError.unreadable }
-                    bytes = next.partialValue
+                    try total.include(path: entry.path, device: metadata.device, inode: metadata.inode, kind: metadata.kind, size: metadata.bytes)
                 } else if metadata.kind != S_IFDIR { throw FileSafetyError.unreadable }
                 if try stamp(entry) != metadata { changed = true }
             } catch {
@@ -1304,10 +1370,10 @@ private final class StorageExplorer: @unchecked Sendable {
         }
         if (try? stamp(root)) != initial { changed = true }
         skipped += localSkipped
-        if control.cancelled { return (bytes, "cancelled") }
-        if budget.limitReached { return (bytes, "partial") }
-        if budget.processed == processedBefore && localSkipped > 0 { return (nil, "unavailable") }
-        return (bytes, changed ? "changed" : localSkipped > 0 ? "partial" : "complete")
+        if control.cancelled { return result(total.bytes, "cancelled") }
+        if budget.limitReached { return result(total.bytes, "partial") }
+        if budget.processed == processedBefore && localSkipped > 0 { return result(nil, "unavailable") }
+        return result(total.bytes, changed ? "changed" : localSkipped > 0 ? "partial" : "complete")
     }
 }
 

@@ -605,8 +605,52 @@ private func runExplorerBudgetTests() throws {
     print("PASS: explorer shared entry/time budgets, partial measured results, unvisited roots not scanned, bounded drill, and cancellation retains prior inventory.")
 }
 
+private func runSharedFileTotalTests() throws {
+    let home = nativeTestRoot.appendingPathComponent("hard-links/home")
+    let system = nativeTestRoot.appendingPathComponent("hard-links/system")
+    let original = try writeFixture("Library/Caches/pip/wheels/one", under: home, data: Data(repeating: 1, count: 12))
+    for path in ["Library/Caches/pip/wheels/two", "Library/Caches/pip/http-v2/response", "Downloads/older", "Library/Logs/log"] {
+        let link = home.appendingPathComponent(path)
+        try testManager.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try testManager.linkItem(at: original, to: link)
+    }
+    try testManager.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -31 * 86400)], ofItemAtPath: original.path)
+    _ = try writeFixture("Library/Application Support/Google/Chrome/Default/History", under: home, data: Data(repeating: 1, count: 5))
+    var moved: [String] = []
+    let worker = FileWorker(home: home, systemRoot: system, trashItem: { moved.append($0.path) })
+    let scan = worker.scan(scope: [.caches, .downloads, .logs, .applications, .privacy])
+    precondition(scan.categories["caches"]!.bytes == 12 && scan.categories["caches"]!.eligibleBytes == 12)
+    precondition(scan.categories["caches"]!.items.count == 2 && scan.categories["caches"]!.items.allSatisfy { $0.bytes == 12 && $0.sharedFiles.count == 1 })
+    precondition(scan.categories["downloads"]!.bytes == 12 && scan.categories["logs"]!.bytes == 12)
+    precondition(scan.categories["storage"]!.bytes == 12 && scan.categories["storage"]!.eligibleBytes == 12)
+    let cleanup = worker.cleanup(try selections([("caches", scan.categories["caches"]!.items.map(\.path)),
+        ("downloads", scan.categories["downloads"]!.items.map(\.path)), ("logs", scan.categories["logs"]!.items.map(\.path))]))
+    precondition(cleanup.errors.isEmpty && cleanup.movedCount == 4 && cleanup.movedBytes == 12)
+    let overlap = worker.cleanup(try selections([("applications", scan.categories["applications"]!.items.map(\.path)),
+        ("privacy", scan.categories["privacy"]!.items.map(\.path))]))
+    precondition(overlap.errors.isEmpty && overlap.movedCount == 1 && overlap.movedBytes == 5)
+    let explorerHome = nativeTestRoot.appendingPathComponent("hard-links/explorer")
+    for name in ["Downloads", "Documents", "Desktop", "Movies", "Music", "Pictures", "Applications"] {
+        try testManager.createDirectory(at: explorerHome.appendingPathComponent(name), withIntermediateDirectories: true)
+    }
+    try testManager.createDirectory(at: system.appendingPathComponent("Applications"), withIntermediateDirectories: true)
+    let file = try writeFixture("Documents/inside/one", under: explorerHome, data: Data(repeating: 2, count: 7))
+    try testManager.linkItem(at: file, to: explorerHome.appendingPathComponent("Documents/two"))
+    try testManager.linkItem(at: file, to: explorerHome.appendingPathComponent("Downloads/three"))
+    try testManager.copyItem(at: file, to: explorerHome.appendingPathComponent("Pictures/distinct-copy"))
+    let explorer = StorageExplorer(home: explorerHome, systemRoot: system, cloudOnly: { _ in false })
+    let roots = explorer.scan()
+    precondition(roots.bytes == 14 && roots.status == "complete")
+    let documents = roots.items.first { $0.name == "Documents" }!
+    let drill = try explorer.drill(id: documents.id)
+    precondition(documents.bytes == 7 && drill.bytes == 7 && drill.items.count == 2 && drill.items.allSatisfy { $0.bytes == 7 })
+    print("PASS: hard-linked bytes count once within rows, categories, storage, explorer roots/drill, and mocked Trash totals; overlapping targets move once; distinct copies count separately.")
+}
+
 if CommandLine.arguments.contains("--explorer-budget") {
     try runExplorerBudgetTests()
+} else if CommandLine.arguments.contains("--shared-totals") {
+    try runSharedFileTotalTests()
 } else {
 try runScannerTests()
 try runBulkPolicyTests()
@@ -616,6 +660,7 @@ try runCancellationTests()
 try runScopedScanTests()
 try runExplorerTests()
 try runExplorerBudgetTests()
+try runSharedFileTotalTests()
 try runKeepTests()
 try runDownloadRuleTests()
 try runAppRemovalTests()

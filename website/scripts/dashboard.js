@@ -202,7 +202,7 @@
       count.hidden = false;
       count.textContent = `${items.length} eligible ${isNative ? "" : "example "}${items.length === 1 ? "item" : "items"}${partial ? " · Partial scan" : ""}`;
       size.hidden = false;
-      size.textContent = `${formatLogical(items.reduce((sum, item) => sum + item.bytes, 0))} available for review`;
+      size.textContent = `${formatLogical(logicalTotal(items))} available for review`;
     });
     const recommendationsHeading = document.querySelector("#recommendations-heading");
     recommendationsHeading.hidden = false;
@@ -347,7 +347,7 @@
     const items = reviewItems();
     const count = items.length;
     const known = items.filter((item) => Number.isFinite(item.bytes));
-    const selectedBytes = known.reduce((sum, item) => sum + item.bytes, 0);
+    const selectedBytes = logicalTotal(known);
     selectedMB = selectedBytes / 1_000_000;
     selectedSizeLabel = count && !known.length ? "Size unavailable"
       : `${formatLogical(selectedBytes)}${known.length < count ? " · Some sizes unavailable" : ""}`;
@@ -473,6 +473,7 @@
         : item.canClean === false ? "Read-only inventory. Cleanup is not available for this item." : "",
       item.path ? `Path: ${item.path}` : "",
       `Logical file size: ${size}`,
+      "Shared hard-linked files count once in totals. Logical sizes do not promise reclaimable space.",
       Number.isFinite(item.modifiedAt) ? `Modified: ${new Date(item.modifiedAt * 1000).toLocaleString()}` : "",
       item.info ? `Size/Info: ${item.info}` : "",
     ].filter(Boolean).join("\n");
@@ -656,6 +657,24 @@
     });
     return items.filter((item) => !item.path || !items.some((parent) => parent.id !== item.id
       && parent.path && item.path.startsWith(parent.path + "/")));
+  }
+  function logicalTotal(items) {
+    const paths = new Set();
+    const shared = new Set();
+    const distinct = items.filter((item) => {
+      if (!item.path) return true;
+      if (paths.has(item.path)) return false;
+      paths.add(item.path); return true;
+    }).filter((item, index, rows) => !item.path || !rows.some((parent, parentIndex) => parentIndex !== index
+      && parent.path && item.path.startsWith(parent.path + "/")));
+    return distinct.reduce((sum, item) => {
+      let bytes = item.bytes || 0;
+      for (const file of item.sharedFiles || []) {
+        if (shared.has(file.key)) bytes -= file.bytes;
+        else shared.add(file.key);
+      }
+      return sum + bytes;
+    }, 0);
   }
   function formatLogical(bytes) {
     if (bytes < 1_000_000) return `${bytes.toLocaleString("en-US")} bytes`;
@@ -980,6 +999,7 @@
           name: file.name,
           mb: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes / 1_000_000 : null,
           bytes: Number.isFinite(file.bytes) && file.bytes >= 0 ? file.bytes : null,
+          sharedFiles: file.sharedFiles || [],
           info: Number.isFinite(file.bytes) && file.bytes >= 0
             ? file.formatted || formatLogical(file.bytes) : "Size unavailable",
           details: `${file.path}. ${payload.sizeMeaning || ""}`,
