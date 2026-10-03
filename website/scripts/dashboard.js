@@ -124,8 +124,17 @@
   function renderHomeRecommendations(state = "ready") {
     document.querySelectorAll("[data-inventory-summary]").forEach((summary) => {
       const key = summary.dataset.inventorySummary;
-      summary.textContent = `${categoryTitles[key] || key}: ${inventorySummary(categories[key])}`;
+      const category = categories[key];
+      const known = category && (!isNative || category.available);
+      const bytes = isNative ? category?.bytes : category?.items.reduce((sum, item) => sum + (item.bytes || 0), 0);
+      const measured = known && (isNative ? category.measurementAvailable !== false && Number.isFinite(bytes)
+        : category.items.every((item) => Number.isFinite(item.bytes)));
+      const amount = !known ? "Not scanned" : measured ? formatLogical(bytes) : "Unavailable";
+      summary.textContent = `${key === "downloads" ? "Downloads" : "Caches"} · ${amount}${category?.skippedPaths > 0 || category?.error ? " · Partial" : ""}`;
     });
+    document.querySelector("#home-measurement-details").textContent = ["downloads", "caches"]
+      .map((key) => `${key === "downloads" ? "Downloads" : "Caches"}: ${inventorySummary(categories[key])}${Number.isFinite(categories[key]?.bytes) ? ` (${categories[key].bytes.toLocaleString("en-US")} bytes)` : ""}`)
+      .join(". ") + ". Measured files use logical sizes, not guaranteed space freed. Files moved to Trash still occupy space.";
     document.querySelectorAll("[data-recommendation]").forEach((card) => {
       const key = card.dataset.recommendation;
       const count = card.querySelector("[data-recommendation-count]");
@@ -184,10 +193,7 @@
       const amount = known.reduce(
         (sum, item) => sum + item.bytes, 0,
       );
-      const formatted = isNative
-        ? amount < 1_000_000 ? `${amount.toLocaleString("en-US")} bytes`
-          : formatMB(amount / 1_000_000)
-        : formatMB(amount / 1_000_000);
+      const formatted = formatLogical(amount);
       size.textContent = items.length && !known.length
         ? "Size unavailable"
         : !items.length && partial ? "Size unavailable"
@@ -199,7 +205,18 @@
   }
 
   function setScanState(state, message) {
-    scanStatus.textContent = message;
+    document.querySelector("#scan-explanation").textContent = message;
+    const completedState = ["ready", "empty", "partial"].includes(state);
+    const scanned = Object.values(categories).filter((category) => category.available);
+    const locations = [...new Set(scanned.flatMap((category) => category.skippedLocations || []))];
+    const skipped = scanned.reduce((sum, category) => sum + (category.skippedPaths || 0), 0);
+    document.querySelector("#home-skipped-locations").replaceChildren(...locations.map((path) => {
+      const li = document.createElement("li"); li.textContent = path; return li;
+    }));
+    document.querySelector("#btn-scan-details").hidden = !completedState;
+    scanStatus.textContent = isNative && completedState
+      ? `${state === "partial" ? "Partial scan" : "Scan finished"}${skipped ? ` · ${skipped} locations skipped` : ""}`
+      : !isNative && completedState ? "Demo · Example data" : message;
     scanButtons.forEach((button) => {
       button.disabled = state === "loading";
     });
@@ -211,13 +228,13 @@
     });
     scanUpdated.hidden = !hasCompletedScan;
     if (completed) {
-      const now = isNative && categories[currentCategory]?.scannedAt
-        ? new Date(categories[currentCategory].scannedAt * 1000) : new Date();
+      const scannedAt = categories[currentCategory]?.scannedAt
+        || Math.max(0, ...Object.values(categories).map((category) => category.scannedAt || 0));
+      const now = isNative && scannedAt ? new Date(scannedAt * 1000) : new Date();
       scanUpdatedTime.dateTime = now.toISOString();
       scanUpdatedTime.textContent = now.toLocaleTimeString([], {
         hour: "numeric",
         minute: "2-digit",
-        second: "2-digit",
       });
     }
     renderHomeRecommendations(state === "empty" ? "ready" : state);
@@ -245,7 +262,6 @@
     document.querySelector("#storage-size-note").textContent = isNative
       ? "Available space is reported by macOS. Cleanup candidates use logical file sizes, not guaranteed space freed."
       : "Fictional storage example. Logical file sizes are not guaranteed space freed.";
-    document.querySelector(".storage-disclosure").hidden = false;
     if (storage && (
       !Number.isFinite(storage.totalBytes) || storage.totalBytes <= 0 ||
       !Number.isFinite(storage.availableBytes) || storage.availableBytes < 0 ||
@@ -273,8 +289,6 @@
     );
     document.querySelector("#storage-available").textContent =
       formatGB(availableBytes);
-    document.querySelector("#storage-percent").textContent =
-      `${percent}% of your disk`;
     document.querySelector("#storage-volume").textContent = volumeName;
     document.querySelector("#storage-usage").textContent =
       `${formatGB(usedBytes)} used / ${formatGB(totalBytes)} total`;
@@ -637,7 +651,9 @@
       && parent.path && item.path.startsWith(parent.path + "/")));
   }
   function formatLogical(bytes) {
-    return bytes < 1_000_000 ? `${bytes.toLocaleString("en-US")} bytes` : formatMB(bytes / 1_000_000);
+    if (bytes < 1_000_000) return `${bytes.toLocaleString("en-US")} bytes`;
+    const gb = bytes >= 1_000_000_000;
+    return `${(bytes / (gb ? 1_000_000_000 : 1_000_000)).toLocaleString("en-US", { maximumFractionDigits: gb ? 1 : 0 })} ${gb ? "GB" : "MB"}`;
   }
 
   function scrollFiles(direction) {
@@ -750,7 +766,9 @@
   document.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button || button.disabled) return;
-    if (button.dataset.explorerId) {
+    if (button.dataset.homeDetails) {
+      document.getElementById(button.dataset.homeDetails).showModal();
+    } else if (button.dataset.explorerId) {
       if (isNative) {
         if (window.macwipeUI.explore(button.dataset.explorerId) !== false) document.querySelector("#explorer-status").textContent = "Measuring folder…";
       } else {
@@ -842,7 +860,7 @@
   });
   document.querySelector("#metric-example-label").hidden = isNative;
   if (!isNative) {
-    document.querySelector(".system-details summary").textContent = "Examples";
+    document.querySelector(".system-details").textContent = "Examples";
     renderMetrics({ cpuPercent: 23, memoryPressure: "Normal", thermalState: "Normal", sampledAt: Date.now() / 1000 });
   }
   window.addEventListener("macwipe:busy", ({ detail }) => {

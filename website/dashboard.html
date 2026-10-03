@@ -138,26 +138,20 @@
                     <div class="storage-ring-center" aria-hidden="true">
                       <strong id="storage-available"></strong>
                       <span>available</span>
-                      <small id="storage-percent"></small>
                     </div>
                   </div>
                   <div class="storage-summary">
                     <h3 id="storage-volume"></h3>
                     <p id="storage-usage"></p>
-                    <ul id="storage-legend" class="storage-legend"></ul>
+                    <div class="home-inventory-overview"><strong>Scanned</strong><span data-inventory-summary="downloads"></span><span data-inventory-summary="caches"></span></div>
                     <div class="storage-actions">
-                    <details class="storage-disclosure"><summary>Details</summary><p id="storage-size-note" hidden>
-                      Available space is reported by macOS. Cleanup candidates
-                      use logical file sizes, not guaranteed space freed.
-                    </p>
-                    <button class="question-row" type="button" data-action="storage-settings">Open macOS Storage settings</button>
-                    </details>
+                    <button class="question-row secondary-action" type="button" data-home-details="storage-details-dialog" aria-haspopup="dialog">Details</button>
                     <button class="question-row" type="button" data-action="explore-storage">Explore storage</button>
                     </div>
                   </div>
                 </div>
               </section>
-              <p class="home-inventory-overview"><span data-inventory-summary="downloads"></span><span data-inventory-summary="caches"></span></p>
+
               <section
                 class="home-recommendations"
                 aria-labelledby="recommendations-heading"
@@ -210,14 +204,14 @@
                   </article>
                 </div>
                 <p class="home-cleanup-note">
-                  Nothing is removed automatically. Files moved to Trash still occupy space.
+                  Nothing is removed automatically.
                 </p>
               </section>
               <div class="home-system-status" aria-label="Current system activity">
                 <span class="metric"><img src="assets/cpu.svg" width="16" height="16" alt="" />CPU activity <meter id="cpu-meter" min="0" max="100" value="0" aria-label="CPU activity" hidden></meter><strong id="cpu-value">Measuring</strong></span>
                 <span class="metric"><img src="assets/memory.svg" width="16" height="16" alt="" />Memory pressure <strong id="memory-value">Unavailable</strong></span>
                 <span class="metric"><img src="assets/thermal.svg" width="16" height="16" alt="" />Thermal state <strong id="thermal-value">Unavailable</strong></span>
-                <details class="system-details"><summary>Details</summary><p id="metric-example-label" hidden>Demo examples. These are fictional, stable readings.</p><p>Current system activity; file cleanup does not guarantee better performance.</p><p>High readings suggest investigating the current workload in Activity Monitor.</p><p id="metric-updated">No current sample.</p><button class="question-row" type="button" data-action="activity-monitor">Open Activity Monitor</button></details>
+                <button class="question-row secondary-action system-details" type="button" data-home-details="system-details-dialog" aria-haspopup="dialog">Details</button>
               </div>
             </div>
             <div
@@ -335,12 +329,34 @@
         <footer class="status-strip">
           <span id="scan-status" role="status">Demo · Example data</span>
           <span id="scan-updated" hidden>
-            · Last updated <time id="scan-updated-time"></time>
+            · Updated <time id="scan-updated-time"></time>
           </span>
+          <button class="question-row secondary-action" id="btn-scan-details" type="button" data-home-details="scan-details-dialog" aria-haspopup="dialog" hidden>Details</button>
           <button class="question-row" id="btn-cancel-scan" type="button" data-action="cancel-scan" hidden>Cancel scan</button>
         </footer>
       </main>
     </div>
+    <dialog class="window modal-dialog home-details-dialog" id="storage-details-dialog" aria-labelledby="storage-details-title">
+      <header class="title-bar">
+        <span class="title-bar-label" id="storage-details-title">Storage details</span>
+        <button class="window-control close-control" type="button" data-close aria-label="Close storage details" autofocus>×</button>
+      </header>
+      <div class="dialog-body"><p id="storage-size-note"></p><ul id="storage-legend" class="storage-legend"></ul><p id="home-measurement-details"></p><button class="question-row secondary-action" type="button" data-action="storage-settings">Open macOS Storage settings</button></div>
+    </dialog>
+    <dialog class="window modal-dialog home-details-dialog" id="system-details-dialog" aria-labelledby="system-details-title">
+      <header class="title-bar">
+        <span class="title-bar-label" id="system-details-title">Current system activity</span>
+        <button class="window-control close-control" type="button" data-close aria-label="Close current system activity" autofocus>×</button>
+      </header>
+      <div class="dialog-body"><p id="metric-example-label" hidden>Demo examples. These are fictional, stable readings.</p><p>Current system activity; file cleanup does not guarantee better performance.</p><p>High readings suggest investigating the current workload in Activity Monitor.</p><p id="metric-updated">No current sample.</p><button class="question-row secondary-action" type="button" data-action="activity-monitor">Open Activity Monitor</button></div>
+    </dialog>
+    <dialog class="window modal-dialog home-details-dialog" id="scan-details-dialog" aria-labelledby="scan-details-title">
+      <header class="title-bar">
+        <span class="title-bar-label" id="scan-details-title">Scan details</span>
+        <button class="window-control close-control" type="button" data-close aria-label="Close scan details" autofocus>×</button>
+      </header>
+      <div class="dialog-body"><p id="scan-explanation"></p><ul id="home-skipped-locations"></ul></div>
+    </dialog>
     <dialog
       class="window modal-dialog"
       data-chat-prefix="details"
