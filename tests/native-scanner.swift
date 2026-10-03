@@ -129,6 +129,13 @@ private func runScannerTests() throws {
                                  trashItem: { _ in }).scan()
     precondition(missingScan.storage == nil)
     precondition(!missingScan.categories["downloads"]!.measurementAvailable)
+    let inaccessibleHome = nativeTestRoot.appendingPathComponent("inaccessible-apps/home")
+    _ = try writeFixture("Applications/Hidden.app/Contents/Info.plist", under: inaccessibleHome)
+    let inaccessibleApps = inaccessibleHome.appendingPathComponent("Applications")
+    try testManager.setAttributes([.posixPermissions: 0], ofItemAtPath: inaccessibleApps.path)
+    defer { try? testManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: inaccessibleApps.path) }
+    let inaccessible = FileWorker(home: inaccessibleHome, systemRoot: nativeTestRoot.appendingPathComponent("missing-system"), trashItem: { _ in }).scan(scope: [.applications]).categories["applications"]!
+    precondition(!inaccessible.measurementAvailable && inaccessible.skippedPaths > 0 && inaccessible.items.isEmpty)
     let categories = encoded["categories"] as! [String: [String: Any]]
     precondition((categories["caches"]!["skippedPaths"] as! Int) > 0)
     let item = (categories["applications"]!["items"] as! [[String: Any]])[0]

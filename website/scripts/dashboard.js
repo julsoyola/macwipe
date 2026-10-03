@@ -876,7 +876,8 @@
     const bytes = isNative ? category.bytes : category.items.reduce((sum, item) => sum + (item.bytes || 0), 0);
     const amount = known ? bytes === 0 ? "0 bytes" : bytes < 1_000_000
       ? `${bytes.toLocaleString("en-US")} bytes` : formatMB(bytes / 1_000_000) : "Unavailable";
-    const label = category === categories.explorer ? "Measured files — logical size" : "Measured inventory";
+    const label = category === categories.explorer ? "Measured files — logical size"
+      : category === categories.caches || category === categories.downloads ? "Measured inventory" : "Measured listed items";
     return `${!isNative ? "Example · " : ""}${category.skippedPaths > 0 || category.error ? "Partial · " : ""}${label}: ${amount}`;
   }
   function showItemDetails(item) {

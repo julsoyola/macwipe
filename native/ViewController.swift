@@ -577,7 +577,10 @@ private final class FileWorker: @unchecked Sendable {
         for category in scope { approved.removeValue(forKey: category) }
         inventory = inventory.filter { !scope.contains($0.value.category) }
         var results = completed
-        let applications = scope.contains(.applications) ? roots(for: .applications).prefix(2).flatMap { applicationURLs(in: $0) } : []
+        var applicationSkipped: [String] = []
+        let applications = scope.contains(.applications) ? roots(for: .applications).prefix(2).flatMap {
+            applicationURLs(in: $0, onError: { applicationSkipped.append($0.path) })
+        } : []
         var installedNames = Set<String>()
         for app in applications {
             if control.cancelled { break }
@@ -599,9 +602,10 @@ private final class FileWorker: @unchecked Sendable {
             scanCategory = category
             progress(category, processedCount)
             var result = CategoryScan()
+            if category == .applications { result.skippedLocations = applicationSkipped; result.skippedPaths = applicationSkipped.count }
             for root in roots(for: category) {
                 // Invalid or inaccessible roots never disable other roots/items.
-                guard (try? validateRoot(root)) != nil else {
+                guard (try? validateRoot(root)) != nil, manager.isReadableFile(atPath: root.path) else {
                     result.skippedPaths += 1
                     result.skippedLocations.append(root.path)
                     continue
@@ -635,6 +639,8 @@ private final class FileWorker: @unchecked Sendable {
             result.formatted = format(result.bytes)
             result.eligibleFormatted = format(result.eligibleBytes)
             result.canClean = result.items.contains { $0.canClean }
+            result.skippedLocations = Array(Set(result.skippedLocations)).sorted()
+            result.skippedPaths = result.skippedLocations.count
             result.scannedAt = now.timeIntervalSince1970
             result.items.sort { $0.path < $1.path }
             results[category.rawValue] = result
@@ -716,12 +722,12 @@ private final class FileWorker: @unchecked Sendable {
         }
     }
 
-    private func applicationURLs(in root: URL) -> [URL] {
+    private func applicationURLs(in root: URL, onError: @escaping (URL) -> Void = { _ in }) -> [URL] {
         guard (try? validateRoot(root)) != nil,
               let enumerator = manager.enumerator(at: root,
                   includingPropertiesForKeys: nil,
                   options: [.skipsPackageDescendants],
-                  errorHandler: { _, _ in true }) else { return [] }
+                  errorHandler: { url, _ in onError(url); return true }) else { onError(root); return [] }
         var applications: [URL] = []
         for case let url as URL in enumerator {
             if scanControl?.cancelled == true { break }
