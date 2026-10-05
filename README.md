@@ -65,21 +65,20 @@ Delete macwipe is a separate confirmation that targets only the running app
 bundle. It quits after a successful move to Trash. Normal cleanup excludes
 that bundle and directories that would include it.
 
-## Preview
+## Screenshots
 
 <table>
   <tr>
-    <td><a href="docs/screenshots/landing.png"><img src="docs/screenshots/landing.png" width="320" alt="macwipe landing page"></a><br></td>
-    <td><a href="docs/screenshots/chat.png"><img src="docs/screenshots/chat.png" width="320" alt="mac-chat with a local message"></a><br></td>
+    <td><a href="docs/screenshots/macwipe-landing.png"><img src="docs/screenshots/macwipe-landing.png" width="320" alt="MacWipe landing page with macOS download, web demo, and FAQ buttons"></a><br>Landing page</td>
+    <td><a href="docs/screenshots/macwipe-home-demo.png"><img src="docs/screenshots/macwipe-home-demo.png" width="320" alt="MacWipe Home demo with storage overview, Downloads and cache summaries, and system indicators"></a><br>Home dashboard (demo)</td>
   </tr>
   <tr>
-    <td><a href="docs/screenshots/dashboard.png"><img src="docs/screenshots/dashboard.png" width="320" alt="Storage dashboard with example items"></a><br></td>
-    <td><a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" width="320" alt="Selected items and simulate cleanup dialog"></a><br></td>
+    <td><a href="docs/screenshots/macwipe-chat.png"><img src="docs/screenshots/macwipe-chat.png" width="320" alt="Mac-chat window with a data-handling question, response, and message input"></a><br>Chat window</td>
+    <td><a href="docs/screenshots/macwipe-storage-explorer-demo.png"><img src="docs/screenshots/macwipe-storage-explorer-demo.png" width="320" alt="MacWipe storage explorer demo showing read-only Documents and Pictures entries with example sizes"></a><br>Storage explorer (demo)</td>
   </tr>
 </table>
 
-These saved browser previews may show an earlier dashboard. Click a preview
-to view the larger image.
+Click a screenshot to view the larger image.
 
 ## Local website and native builds
 
