@@ -1,0 +1,9 @@
+# Generated media, private run metadata, logs, and recorder profiles.
+/.local/
+.DS_Store
+
+# Recordings remain private even outside the run directory.
+*.mp4
+*.webm
+*.mov
+*.pem

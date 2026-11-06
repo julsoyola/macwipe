@@ -1,0 +1,244 @@
+{
+  "project": "macwipe",
+  "website": "website",
+  "entry": "dashboard.html",
+  "duration": 84,
+  "theme": {
+    "icon": "website/assets/disk.svg",
+    "paletteSource": "website/styles/theme.css",
+    "colors": {
+      "background": "#d7a6ba",
+      "panel": "#fff6ec",
+      "ink": "#542b45",
+      "title": "#a44875",
+      "accent": "#eaccd7"
+    }
+  },
+  "walkthrough": {
+    "start": 5,
+    "end": 79,
+    "label": "WEB DEMO · EXAMPLE DATA"
+  },
+  "cards": {
+    "opening": {
+      "title": "macwipe",
+      "subtitle": "See your space. Choose what stays.",
+      "footer": "A walkthrough with example data"
+    },
+    "closing": {
+      "title": "macwipe",
+      "subtitle": "Review first. You stay in control.",
+      "site": "macwipe.vercel.app",
+      "footer": "Browser demo · Example data"
+    }
+  },
+  "scenes": [
+    {
+      "id": "opening",
+      "start": 0,
+      "end": 5
+    },
+    {
+      "id": "home",
+      "start": 5,
+      "end": 13,
+      "captions": [
+        "Start with a clearer picture of your storage."
+      ]
+    },
+    {
+      "id": "explore",
+      "start": 13,
+      "end": 24,
+      "captions": [
+        "Explore folders and see where larger files live.",
+        "Storage exploration is read-only."
+      ]
+    },
+    {
+      "id": "downloads",
+      "start": 24,
+      "end": 36,
+      "captions": [
+        "Review older downloads before deciding what goes.",
+        "Not modified in over 30 days doesn’t mean unused."
+      ]
+    },
+    {
+      "id": "keep",
+      "start": 36,
+      "end": 46,
+      "captions": [
+        "Keep what matters.",
+        "Exclude an item from recommendations and bulk selection."
+      ]
+    },
+    {
+      "id": "cache",
+      "start": 46,
+      "end": 57,
+      "captions": [
+        "Understand the trade-off before clearing a cache.",
+        "Apps may recreate cached files."
+      ]
+    },
+    {
+      "id": "selection",
+      "start": 57,
+      "end": 64,
+      "captions": [
+        "Choose individual items—even across categories."
+      ]
+    },
+    {
+      "id": "review",
+      "start": 64,
+      "end": 74,
+      "captions": [
+        "One last review before cleanup."
+      ]
+    },
+    {
+      "id": "result",
+      "start": 74,
+      "end": 79,
+      "captions": [
+        "Demo complete. No real files were changed.",
+        "In the native app, confirmed selections move to Trash."
+      ]
+    },
+    {
+      "id": "closing",
+      "start": 79,
+      "end": 84
+    }
+  ],
+  "steps": [
+    {
+      "at": 5,
+      "action": "home",
+      "checkpoint": "home"
+    },
+    {
+      "at": 7,
+      "action": "hoverChart"
+    },
+    {
+      "at": 11.5,
+      "action": "hoverExplore"
+    },
+    {
+      "at": 13,
+      "action": "explore"
+    },
+    {
+      "at": 14.5,
+      "action": "explorerRoots",
+      "checkpoint": "explorer-roots"
+    },
+    {
+      "at": 16,
+      "action": "documents",
+      "checkpoint": "documents"
+    },
+    {
+      "at": 18.5,
+      "action": "projects",
+      "checkpoint": "projects"
+    },
+    {
+      "at": 21,
+      "action": "breadcrumb"
+    },
+    {
+      "at": 23,
+      "action": "backHome"
+    },
+    {
+      "at": 24,
+      "action": "downloads"
+    },
+    {
+      "at": 25.5,
+      "action": "sortDownloads"
+    },
+    {
+      "at": 27,
+      "action": "installerDetails",
+      "checkpoint": "installer-details"
+    },
+    {
+      "at": 35.3,
+      "action": "closeDetails"
+    },
+    {
+      "at": 36,
+      "action": "archiveDetails",
+      "checkpoint": "archive-details"
+    },
+    {
+      "at": 40,
+      "action": "keepArchive"
+    },
+    {
+      "at": 41.8,
+      "action": "closeDetails"
+    },
+    {
+      "at": 43,
+      "action": "verifyKept",
+      "checkpoint": "kept"
+    },
+    {
+      "at": 46,
+      "action": "caches"
+    },
+    {
+      "at": 48,
+      "action": "browserCacheDetails",
+      "checkpoint": "cache-details"
+    },
+    {
+      "at": 55.5,
+      "action": "closeDetails"
+    },
+    {
+      "at": 57,
+      "action": "selectThumbnail"
+    },
+    {
+      "at": 59,
+      "action": "downloads"
+    },
+    {
+      "at": 61,
+      "action": "selectInstaller"
+    },
+    {
+      "at": 62.5,
+      "action": "verifySelection",
+      "checkpoint": "selection"
+    },
+    {
+      "at": 64,
+      "action": "review",
+      "checkpoint": "review"
+    },
+    {
+      "at": 73.2,
+      "action": "simulate"
+    },
+    {
+      "at": 74,
+      "action": "verifyResult",
+      "checkpoint": "result"
+    },
+    {
+      "at": 77,
+      "action": "restCursor"
+    }
+  ],
+  "sourceLimitations": [
+    "The current Details renderer shows shared category explanations, not the item-specific demo-data.js copy. The requested slower-next-load sentence is not visible in the actual cache dialog; production UI is preserved."
+  ]
+}
