@@ -12,3 +12,16 @@ reports/
 /native/*.app/
 /native/build/
 /native/release/
+
+# Private local files; never publish.
+/.private/
+
+# Unreviewed local screenshot originals.
+/docs/screenshots/Screenshot 2026-10-04 at 17.06.04.png
+/docs/screenshots/Screenshot 2026-10-04 at 17.06.12.png
+/docs/screenshots/Screenshot 2026-10-04 at 17.06.27.png
+/docs/screenshots/Screenshot 2026-10-04 at 17.06.42.png
+
+# Local credentials.
+*.pem
+client_secret*.json

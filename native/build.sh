@@ -44,6 +44,8 @@ cp "$NATIVE_DIR/Assets/macwipe-icon.png" "$APP_DIR/Contents/Resources/macwipe-ic
 # Only generated web resources are synchronized; release ZIPs stay outside.
 rsync -a --delete --delete-excluded \
   --exclude '/downloads/' --exclude '/.vercel/' --exclude '.DS_Store' \
+  --exclude '.private/' --exclude '.local/' --exclude '.env*' --exclude '*.pem' \
+  --exclude 'client_secret*.json' \
   "$PROJECT_DIR/website/" "$APP_DIR/Contents/Resources/Web/"
 cp "$NATIVE_DIR/Web/macwipe-bridge.js" "$APP_DIR/Contents/Resources/Web/macwipe-bridge.js"
 codesign --force --sign - --entitlements "$NATIVE_DIR/macwipe.entitlements" "$APP_DIR"
